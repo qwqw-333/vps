@@ -3,6 +3,11 @@ output "server_ip" {
   value       = hcloud_server.k3s_01.ipv4_address
 }
 
+output "server_name" {
+  description = "Name of the server"
+  value       = hcloud_server.k3s_01.name
+}
+
 output "server_status" {
   description = "Current status of the server"
   value       = hcloud_server.k3s_01.status
