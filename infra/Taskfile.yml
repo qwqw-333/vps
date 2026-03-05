@@ -1,0 +1,67 @@
+version: "3"
+
+tasks:
+  default:
+    aliases: [help]
+    desc: Show available commands
+    silent: true
+    cmds:
+      - |
+        source ../scripts/colors.sh
+        printf "\n"
+        printf "  ${BOLD_CYAN}task init${NC}      Init providers & backend\n"
+        printf "  ${BOLD_CYAN}task plan${NC}      Preview infrastructure changes\n"
+        printf "  ${BOLD_CYAN}task apply${NC}     Apply infrastructure changes\n"
+        printf "  ${BOLD_CYAN}task destroy${NC}   Destroy all resources\n"
+        printf "\n"
+        printf "  ${BOLD_CYAN}task fmt${NC}       Format .tf files\n"
+        printf "  ${BOLD_CYAN}task ip${NC}        Show server public IP\n"
+        printf "  ${BOLD_CYAN}task clean${NC}     Remove .terraform/ for clean re-init\n"
+        printf "\n"
+
+  init:
+    desc: Init providers & backend
+    preconditions:
+      - sh: command -v terraform
+        msg: "terraform is not installed"
+    cmds:
+      - terraform init
+
+  plan:
+    desc: Preview infrastructure changes
+    preconditions:
+      - sh: command -v terraform
+        msg: "terraform is not installed"
+    cmds:
+      - terraform plan
+
+  apply:
+    desc: Apply infrastructure changes
+    preconditions:
+      - sh: command -v terraform
+        msg: "terraform is not installed"
+    cmds:
+      - terraform apply
+
+  destroy:
+    desc: Destroy all infrastructure
+    cmds:
+      - terraform destroy
+
+  fmt:
+    desc: Format .tf files
+    cmds:
+      - terraform fmt -recursive
+
+  ip:
+    desc: Show server public IP
+    silent: true
+    cmds:
+      - terraform output -raw server_ip
+
+  clean:
+    desc: Remove .terraform/ for clean re-init
+    prompt: Remove .terraform/ and lock file?
+    cmds:
+      - rm -rf .terraform
+      - rm -f .terraform.lock.hcl

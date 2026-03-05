@@ -1,0 +1,28 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ansible
+*.retry
+*.pem
+
+# Kubernetes
+kubeconfig
+*.key
+*.crt
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
