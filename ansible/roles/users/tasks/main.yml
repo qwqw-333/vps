@@ -1,0 +1,25 @@
+---
+# Role: users
+# Creates system users with SSH access and sudo privileges
+
+- name: Create user {{ app_user }}
+  ansible.builtin.user:
+    name: "{{ app_user }}"
+    shell: "{{ app_user_shell }}"
+    create_home: true
+    state: present
+
+- name: Add SSH key for {{ app_user }}
+  ansible.posix.authorized_key:
+    user: "{{ app_user }}"
+    key: "{{ app_user_ssh_key }}"
+    state: present
+
+- name: Grant passwordless sudo to {{ app_user }}
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ app_user }}"
+    content: "{{ app_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s

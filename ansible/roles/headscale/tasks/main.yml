@@ -1,0 +1,46 @@
+---
+# Role: headscale
+# Installs Headscale v0.28.0 native via .deb and configures it with systemd
+
+- name: Check if ufw is installed
+  ansible.builtin.command: dpkg-query -W -f='${Status}' ufw
+  register: ufw_installed
+  changed_when: false
+  failed_when: false
+
+- name: Configure ufw rules for Headscale
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    comment: "{{ item.comment }}"
+  loop: "{{ headscale_ufw_rules }}"
+  when: ufw_installed.rc == 0
+
+- name: Download Headscale .deb package
+  ansible.builtin.get_url:
+    url: "https://github.com/juanfont/headscale/releases/download/v{{ headscale_version }}/headscale_{{ headscale_version }}_linux_{{ headscale_arch }}.deb"
+    dest: "/tmp/headscale.deb"
+    mode: "0644"
+    checksum: "sha256:8c3afb2e950e060d21bdefa98cda3accdcc1cb893bbed2e94a58de25a42f6dbe"
+
+- name: Install Headscale from .deb
+  ansible.builtin.apt:
+    deb: /tmp/headscale.deb
+    state: present
+
+- name: Deploy Headscale config from template
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/headscale/config.yaml
+    owner: headscale
+    group: headscale
+    mode: "0600"
+  notify: Restart headscale
+
+- name: Enable and start Headscale
+  ansible.builtin.systemd:
+    name: headscale
+    enabled: true
+    state: started
+    daemon_reload: true

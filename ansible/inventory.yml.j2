@@ -1,0 +1,7 @@
+# Inventory template — rendered into inventory.yml by scripts/generate-inventory.py
+# Edit this file to change inventory structure; do not edit inventory.yml directly
+all:
+  hosts:
+    {{ server_name }}:
+      ansible_host: "{{ server_ip }}"
+      ansible_user: root

@@ -1,0 +1,15 @@
+---
+base_hostname: "{{ inventory_hostname }}"
+
+base_packages:
+  - curl
+  - wget
+  - htop
+  - git
+  - ufw
+  - fail2ban
+  - python3-systemd
+  - unattended-upgrades
+
+base_ufw_rules:
+  - { port: "22", proto: tcp, comment: "SSH" }

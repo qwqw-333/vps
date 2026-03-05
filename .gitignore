@@ -14,6 +14,9 @@ override.tf.json
 # Ansible
 *.retry
 *.pem
+ansible/inventory.yml
+ansible/.ansible_cache/
+ansible/.vault_pass
 
 # Kubernetes
 kubeconfig

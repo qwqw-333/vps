@@ -1,0 +1,12 @@
+---
+headscale_version: "0.28.0"
+headscale_arch: "amd64"
+headscale_base_domain: "hs.local"
+acme_email: ""
+tls_letsencrypt_hostname: ""
+
+headscale_ufw_rules:
+  - { port: "80", proto: tcp, comment: "HTTP (Lets Encrypt)" }
+  - { port: "443", proto: tcp, comment: "HTTPS (Headscale)" }
+  - { port: "3478", proto: udp, comment: "Headscale DERP/STUN" }
+  - { port: "41641", proto: udp, comment: "Headscale WireGuard" }

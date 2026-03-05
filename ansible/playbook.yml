@@ -1,0 +1,17 @@
+---
+- name: Configure VPS
+  hosts: all
+  become: true
+
+  vars:
+    server_url: "{{ vault_server_url }}"
+    server_public_ip: "{{ ansible_host }}"
+    acme_email: "{{ vault_acme_email }}"
+    tls_letsencrypt_hostname: "{{ vault_tls_letsencrypt_hostname }}"
+
+  roles:
+    - base
+    - users
+    - headscale
+    - k3s
+    - tailscale

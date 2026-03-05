@@ -1,0 +1,36 @@
+version: "3"
+
+tasks:
+  default:
+    aliases: [help]
+    desc: Show available commands
+    silent: true
+    cmds:
+      - |
+        source ../scripts/colors.sh
+        printf "\n"
+        printf "  ${BOLD_CYAN}task generate-inventory${NC}    Generate inventory.yml from Terraform output\n"
+        printf "  ${BOLD_CYAN}task ping${NC}                  Check SSH connectivity to all hosts\n"
+        printf "  ${BOLD_CYAN}task play${NC}                  Run the playbook (inventory must exist)\n"
+        printf "\n"
+
+  generate-inventory:
+    desc: Generate ansible/inventory.yml from Terraform output
+    cmds:
+      - python3 ../scripts/generate-inventory.py
+
+  play:
+    desc: Run the playbook
+    preconditions:
+      - sh: test -f inventory.yml
+        msg: "inventory.yml not found — run 'task generate-inventory' first"
+    cmds:
+      - ansible-playbook playbook.yml
+
+  ping:
+    desc: Check SSH connectivity to all hosts
+    preconditions:
+      - sh: test -f inventory.yml
+        msg: "inventory.yml not found — run 'task generate-inventory' first"
+    cmds:
+      - ansible all -m ping
