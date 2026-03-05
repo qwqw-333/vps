@@ -1,32 +1,25 @@
 # Obsidian Sync — Self-hosted
 
-Приватная real-time синхронизация Obsidian между macOS, Linux и iPhone через собственный VPN.
+Приватная real-time синхронизация Obsidian между macOS, Linux и iPhone через собственный VPN на Hetzner Cloud.
 
 ## Архитектура
 
-```
-┌─────────────────┐
-│  Hetzner cx23   │
-│  Debian 12      │
-│                 │
-│  ┌───────────┐  │
-│  │ Headscale │◄─────── Tailscale (macOS, Linux, iPhone)
-│  │ (systemd) │  │
-│  └───────────┘  │
-│                 │
-│  ┌───────────┐  │
-│  │    K3s    │  │
-│  │  ┌─────┐  │  │
-│  │  │Argo │  │  │
-│  │  │ CD  │  │  │
-│  │  └──┬──┘  │  │
-│  │     │     │  │
-│  │  ┌──▼──┐  │  │
-│  │  │Couch│◄─────── Obsidian LiveSync
-│  │  │ DB  │  │  │
-│  │  └─────┘  │  │
-│  └───────────┘  │
-└─────────────────┘
+```mermaid
+graph TB
+    subgraph hetzner [Hetzner cx23 / Debian 12]
+        Headscale["Headscale v0.28<br/>(systemd)"]
+        subgraph k3s [K3s]
+            ArgoCD --> CouchDB
+        end
+    end
+
+    macOS["macOS<br/>(Tailscale)"] -->|WireGuard| Headscale
+    Linux["Linux<br/>(Tailscale)"] -->|WireGuard| Headscale
+    iPhone["iPhone<br/>(Tailscale)"] -->|WireGuard| Headscale
+
+    macOS -->|"LiveSync (100.64.x.x)"| CouchDB
+    Linux -->|"LiveSync (100.64.x.x)"| CouchDB
+    iPhone -->|"LiveSync (100.64.x.x)"| CouchDB
 ```
 
 **Стек:** Terraform → Ansible → Headscale v0.28 → K3s → ArgoCD → CouchDB
@@ -35,30 +28,32 @@
 
 ```
 vps/
-├── infra/                      # Terraform (Hetzner Cloud)
-│   ├── Taskfile.yml            # Task-автоматизация Terraform
-│   ├── main.tf
-│   ├── variables.tf
-│   ├── outputs.tf
-│   └── terraform.tfvars        # ⚠ в .gitignore
+├── infra/                          # Terraform (Hetzner Cloud)
+│   ├── Taskfile.yml                # task init, plan, apply, ip
+│   ├── main.tf, variables.tf, outputs.tf
+│   └── terraform.tfvars            # в .gitignore
 │
-├── ansible/
-│   ├── inventory.yml
+├── ansible/                        # Настройка сервера
+│   ├── Taskfile.yml                # task generate-inventory, play, ping
+│   ├── ansible.cfg
 │   ├── playbook.yml
+│   ├── inventory.yml.j2            # Шаблон инвентаря (source of truth)
+│   ├── group_vars/all/vault.yml    # Зашифрованные секреты (ansible-vault)
 │   └── roles/
-│       ├── base/               # apt, ufw, fail2ban
-│       ├── headscale/          # .deb + systemd + config
-│       └── k3s/                # K3s installer
+│       ├── base/                   # apt, ufw, fail2ban
+│       ├── users/                  # Системные пользователи, SSH-ключи, sudo
+│       ├── headscale/              # .deb + systemd + config шаблон
+│       ├── k3s/                    # K3s installer
+│       └── tailscale/              # Tailscale клиент → Headscale
 │
-├── k8s/
-│   ├── argocd/
-│   │   └── application.yml    # ArgoCD Application
-│   └── apps/
-│       └── couchdb/           # Namespace, ConfigMap, Secret, PVC, StatefulSet, Service
+├── k8s/                            # Kubernetes манифесты (GitOps)
+│   ├── argocd/application.yml
+│   └── apps/couchdb/              # Namespace, ConfigMap, Secret, PVC, StatefulSet, Service
 │
 └── scripts/
-    ├── colors.sh              # Общие цвета для скриптов и Taskfile
-    └── setup-devices.sh       # Подключение устройств к Headscale
+    ├── colors.sh                   # ANSI-цвета для скриптов и Taskfile
+    ├── generate-inventory.py       # Генерация inventory.yml из Terraform output
+    └── setup-devices.sh            # Подключение устройств к Headscale
 ```
 
 ## Требования
@@ -68,11 +63,8 @@ vps/
 - Duck DNS домен
 - Tailscale на всех устройствах
 
-### Локальные инструменты
-
 ```bash
-brew install terraform ansible kubectl helm argocd
-brew install tailscale go-task
+brew install terraform ansible kubectl helm argocd tailscale go-task
 ```
 
 ## Быстрый старт
@@ -81,23 +73,32 @@ brew install tailscale go-task
 
 ```bash
 cd infra
-# Подставить Hetzner API токен в terraform.tfvars
+cp terraform.tfvars.example terraform.tfvars   # Указать Hetzner API токен
 
-# Через Taskfile:
 task plan
 task apply
-task ip          # Вывести IP сервера
-
-# Или вручную:
-terraform init && terraform plan && terraform apply
+task ip              # Вывести IP сервера
 ```
 
 ### 2. Ansible — настройка сервера
 
 ```bash
-# Подставить IP в ansible/inventory.yml
-# Подставить Duck DNS домен и IP в ansible/playbook.yml
-ansible-playbook -i ansible/inventory.yml ansible/playbook.yml
+cd ansible
+
+# Настроить vault (один раз):
+#   1. Записать пароль в .vault_pass
+#   2. Заполнить group_vars/all/vault.yml:
+ansible-vault edit group_vars/all/vault.yml
+#      vault_server_url, vault_acme_email, vault_tls_letsencrypt_hostname
+
+# Сгенерировать inventory из Terraform output:
+task generate-inventory
+
+# Проверить подключение:
+task ping
+
+# Запустить настройку:
+task play
 ```
 
 ### 3. Headscale — подключение устройств
@@ -117,7 +118,7 @@ headscale nodes list
 ### 4. ArgoCD + CouchDB
 
 ```bash
-# Установить ArgoCD (один раз):
+# Установить ArgoCD:
 kubectl create namespace argocd
 kubectl apply -n argocd --server-side --force-conflicts \
   -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
@@ -128,7 +129,7 @@ kubectl create secret generic couchdb-credentials \
   --from-literal=COUCHDB_USER=admin \
   --from-literal=COUCHDB_PASSWORD=<пароль>
 
-# Подставить URL репозитория в k8s/argocd/application.yml
+# Указать URL репозитория в k8s/argocd/application.yml, затем:
 kubectl apply -f k8s/argocd/application.yml
 
 # Проверка:
@@ -146,26 +147,26 @@ kubectl get pods -n obsidian-sync
 ## Проверка работоспособности
 
 ```bash
-# Terraform
 terraform plan                              # No changes
-
-# K3s
 kubectl get nodes                           # STATUS = Ready
+kubectl get pods -n obsidian-sync           # Running
 
-# CouchDB
 kubectl port-forward svc/couchdb -n obsidian-sync 5984:5984
-curl http://admin:pass@localhost:5984/       # {"couchdb":"Welcome",...}
+curl http://localhost:5984/                 # {"couchdb":"Welcome",...}
 
-# Headscale
 headscale nodes list                        # Все устройства online
 ```
 
 ## Безопасность
 
-- CouchDB доступен **только** через Headscale VPN (100.64.x.x)
-- API ключи и пароли **не хранятся** в репозитории
-- `terraform.tfvars` в `.gitignore`
-- fail2ban + unattended-upgrades на сервере
+| Механизм | Описание |
+|----------|----------|
+| **Ansible Vault** | Секреты (домен, email) зашифрованы в `group_vars/all/vault.yml` |
+| **Headscale VPN** | CouchDB доступен только через WireGuard VPN (100.64.x.x) |
+| **Двойной файрвол** | Hetzner Cloud Firewall (гипервизор) + UFW (ОС) |
+| **fail2ban** | Защита SSH от brute-force |
+| **unattended-upgrades** | Автоматические security-обновления |
+| **.gitignore** | `terraform.tfvars`, `inventory.yml`, `.vault_pass`, `*.pem`, `*.key` |
 
 ### Двойной файрвол (defense-in-depth)
 
@@ -175,4 +176,3 @@ headscale nodes list                        # Все устройства online
 | **UFW** | На уровне ОС внутри VM | Ansible (`roles/base/`) |
 
 Оба настроены на одинаковые порты: `22/tcp`, `80/tcp`, `443/tcp`, `3478/udp`, `41641/udp`.
-Если один слой скомпрометирован или неправильно настроен — второй продолжает защищать.
