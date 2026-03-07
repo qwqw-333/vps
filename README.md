@@ -7,9 +7,14 @@
 ```mermaid
 graph TB
     subgraph hetzner [Hetzner cx23 / Debian 12]
-        Headscale["Headscale v0.28<br/>(systemd)"]
+        Headscale["Headscale v0.28<br/>(systemd :443)"]
         subgraph k3s [K3s]
-            ArgoCD --> CouchDB
+            EG["Envoy Gateway :8443"]
+            ArgoCD
+            EG --> CouchDB
+            EG --> HSUI["Headscale UI"]
+            ArgoCD -->|GitOps| CouchDB
+            ArgoCD -->|GitOps| HSUI
         end
     end
 
@@ -17,43 +22,25 @@ graph TB
     Linux["Linux<br/>(Tailscale)"] -->|WireGuard| Headscale
     iPhone["iPhone<br/>(Tailscale)"] -->|WireGuard| Headscale
 
-    macOS -->|"LiveSync (100.64.x.x)"| CouchDB
-    Linux -->|"LiveSync (100.64.x.x)"| CouchDB
-    iPhone -->|"LiveSync (100.64.x.x)"| CouchDB
+    macOS -->|"LiveSync (VPN :8443)"| EG
+    Linux -->|"LiveSync (VPN :8443)"| EG
+    iPhone -->|"LiveSync (VPN :8443)"| EG
 ```
 
-**Стек:** Terraform → Ansible → Headscale v0.28 → K3s → ArgoCD → CouchDB
+**Стек:** Terraform → Ansible → Headscale → K3s → ArgoCD → Envoy Gateway → Sealed Secrets → CouchDB
 
 ## Структура проекта
 
 ```
 vps/
-├── infra/                          # Terraform (Hetzner Cloud)
-│   ├── Taskfile.yml                # task init, plan, apply, ip
-│   ├── main.tf, variables.tf, outputs.tf
-│   └── terraform.tfvars            # в .gitignore
-│
-├── ansible/                        # Настройка сервера
-│   ├── Taskfile.yml                # task generate-inventory, play, ping
-│   ├── ansible.cfg
-│   ├── playbook.yml
-│   ├── inventory.yml.j2            # Шаблон инвентаря (source of truth)
-│   ├── group_vars/all/vault.yml    # Зашифрованные секреты (ansible-vault)
-│   └── roles/
-│       ├── base/                   # apt, ufw, fail2ban
-│       ├── users/                  # Системные пользователи, SSH-ключи, sudo
-│       ├── headscale/              # .deb + systemd + config шаблон
-│       ├── k3s/                    # K3s installer
-│       └── tailscale/              # Tailscale клиент → Headscale
-│
-├── k8s/                            # Kubernetes манифесты (GitOps)
-│   ├── argocd/application.yml
-│   └── apps/couchdb/              # Namespace, ConfigMap, Secret, PVC, StatefulSet, Service
-│
-└── scripts/
-    ├── colors.sh                   # ANSI-цвета для скриптов и Taskfile
-    ├── generate-inventory.py       # Генерация inventory.yml из Terraform output
-    └── setup-devices.sh            # Подключение устройств к Headscale
+├── infra/              # Terraform (Hetzner Cloud)
+├── ansible/            # Настройка сервера (5 ролей)
+├── k8s/
+│   ├── argocd/         # ArgoCD Applications
+│   ├── infra/gateway/  # GatewayClass, Gateway, Headscale API proxy
+│   └── apps/           # CouchDB, Headscale UI
+├── scripts/            # Утилиты (colors.sh, generate-inventory.py)
+└── docs/               # Документация (terraform, ansible, kubernetes)
 ```
 
 ## Требования
@@ -64,7 +51,7 @@ vps/
 - Tailscale на всех устройствах
 
 ```bash
-brew install terraform ansible kubectl helm argocd tailscale go-task
+brew install terraform ansible kubectl helm argocd kubeseal tailscale go-task
 ```
 
 ## Быстрый старт
@@ -73,106 +60,60 @@ brew install terraform ansible kubectl helm argocd tailscale go-task
 
 ```bash
 cd infra
-cp terraform.tfvars.example terraform.tfvars   # Указать Hetzner API токен
-
 task plan
 task apply
-task ip              # Вывести IP сервера
 ```
 
 ### 2. Ansible — настройка сервера
 
 ```bash
 cd ansible
-
-# Настроить vault (один раз):
-#   1. Записать пароль в .vault_pass
-#   2. Заполнить group_vars/all/vault.yml:
-ansible-vault edit group_vars/all/vault.yml
-#      vault_server_url, vault_acme_email, vault_tls_letsencrypt_hostname
-
-# Сгенерировать inventory из Terraform output:
+ansible-vault edit group_vars/all/vault.yml   # Заполнить vault-переменные
 task generate-inventory
-
-# Проверить подключение:
-task ping
-
-# Запустить настройку:
-task play
+task play                                      # Один прогон — всё автоматически
 ```
 
-### 3. Headscale — подключение устройств
+### 3. ArgoCD + K8s сервисы
 
 ```bash
-# На сервере:
-headscale users create konoval
-headscale preauthkeys create --user konoval --reusable --expiration 24h
-
-# На каждом устройстве:
-./scripts/setup-devices.sh <duckdns-домен> <auth-key>
-
-# Проверка:
-headscale nodes list
-```
-
-### 4. ArgoCD + CouchDB
-
-```bash
-# Установить ArgoCD:
+# На сервере (через SSH):
 kubectl create namespace argocd
 kubectl apply -n argocd --server-side --force-conflicts \
   -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl apply -f k8s/argocd/
 
-# Создать секрет CouchDB:
-kubectl create secret generic couchdb-credentials \
-  --namespace obsidian-sync \
-  --from-literal=COUCHDB_USER=admin \
-  --from-literal=COUCHDB_PASSWORD=<пароль>
+# Локально — запечатать секрет CouchDB:
+kubeseal ...  # Подробнее: docs/kubernetes.md
+```
 
-# Указать URL репозитория в k8s/argocd/application.yml, затем:
-kubectl apply -f k8s/argocd/application.yml
+### 4. Подключение устройств
 
-# Проверка:
-kubectl get pods -n obsidian-sync
+```bash
+# Через Headscale UI: http://k3s-01.hs.local:8443/web
+# Или через SSH на сервер: headscale preauthkeys create --user 1 --expiration 24h
+# На устройстве: tailscale up --login-server=https://<domain> --authkey=<key>
 ```
 
 ### 5. Obsidian LiveSync
 
-1. Установить плагин **Self-hosted LiveSync** (Community Plugins)
-2. CouchDB URL: `http://100.64.x.x:5984`, DB: `obsidian`
-3. Включить E2EE, задать парольную фразу
-4. **Rebuild Everything** на основном устройстве
-5. **Copy Setup URI** → настроить остальные устройства
+1. Установить плагин **Self-hosted LiveSync**
+2. CouchDB URL: `http://k3s-01.hs.local:8443/couchdb`
+3. Включить E2EE, **Rebuild Everything**, **Copy Setup URI**
 
-## Проверка работоспособности
+## Документация
 
-```bash
-terraform plan                              # No changes
-kubectl get nodes                           # STATUS = Ready
-kubectl get pods -n obsidian-sync           # Running
-
-kubectl port-forward svc/couchdb -n obsidian-sync 5984:5984
-curl http://localhost:5984/                 # {"couchdb":"Welcome",...}
-
-headscale nodes list                        # Все устройства online
-```
+- [docs/terraform.md](docs/terraform.md) — инфраструктура, remote state
+- [docs/ansible.md](docs/ansible.md) — роли, vault, preauthkey flow
+- [docs/kubernetes.md](docs/kubernetes.md) — ArgoCD, Sealed Secrets, Envoy Gateway, маршруты
 
 ## Безопасность
 
 | Механизм | Описание |
 |----------|----------|
-| **Ansible Vault** | Секреты (домен, email) зашифрованы в `group_vars/all/vault.yml` |
-| **Headscale VPN** | CouchDB доступен только через WireGuard VPN (100.64.x.x) |
-| **Двойной файрвол** | Hetzner Cloud Firewall (гипервизор) + UFW (ОС) |
+| **Ansible Vault** | Секреты зашифрованы в `vault.yml` |
+| **Sealed Secrets** | K8s секреты зашифрованы в git, расшифровывает только кластер |
+| **Headscale VPN** | Все сервисы доступны только через WireGuard VPN |
+| **Envoy Gateway** | Порт 8443 закрыт UFW извне, доступен только через VPN |
+| **Двойной файрвол** | Hetzner Cloud Firewall + UFW |
 | **fail2ban** | Защита SSH от brute-force |
-| **unattended-upgrades** | Автоматические security-обновления |
 | **.gitignore** | `terraform.tfvars`, `inventory.yml`, `.vault_pass`, `*.pem`, `*.key` |
-
-### Двойной файрвол (defense-in-depth)
-
-| Слой | Где | Управление |
-|------|-----|------------|
-| **Hetzner Cloud Firewall** | На уровне гипервизора, до VM | Terraform (`infra/main.tf`) |
-| **UFW** | На уровне ОС внутри VM | Ansible (`roles/base/`) |
-
-Оба настроены на одинаковые порты: `22/tcp`, `80/tcp`, `443/tcp`, `3478/udp`, `41641/udp`.

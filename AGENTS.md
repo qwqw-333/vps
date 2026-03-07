@@ -1,6 +1,6 @@
 # AGENTS.md — AI Agent Guide
 
-Infrastructure as Code for a self-hosted Obsidian sync server on Hetzner Cloud: Terraform, Ansible, Headscale, K3s, ArgoCD, CouchDB.
+Infrastructure as Code for a self-hosted Obsidian sync server on Hetzner Cloud: Terraform, Ansible, Headscale, K3s, ArgoCD, Envoy Gateway, CouchDB.
 
 ## Project Structure
 
@@ -32,14 +32,25 @@ vps/
 │
 ├── k8s/                            # Kubernetes manifests (GitOps)
 │   ├── argocd/
-│   │   └── application.yml
+│   │   ├── application.yml                 # CouchDB
+│   │   ├── application-sealed-secrets.yml  # Sealed Secrets controller (Helm)
+│   │   ├── application-envoy-gateway.yml   # Envoy Gateway (Helm)
+│   │   ├── application-gateway-infra.yml   # Gateway API resources
+│   │   ├── application-headscale-ui.yml    # Headscale UI
+│   ├── infra/
+│   │   └── gateway/                # GatewayClass, Gateway, Headscale API proxy
 │   └── apps/
-│       └── couchdb/                # Namespace, ConfigMap, Secret, PVC, StatefulSet, Service
+│       ├── couchdb/                # Namespace, ConfigMap, SealedSecret, PVC, StatefulSet, Service, HTTPRoute
+│       └── headscale-ui/           # Deployment, Service, HTTPRoute
 │
-└── scripts/                        # Helper scripts
-    ├── colors.sh                   # Shared ANSI color definitions (bash/zsh)
-    ├── generate-inventory.py       # Renders inventory.yml from Terraform output
-    └── setup-devices.sh            # Register devices with Headscale
+├── scripts/                        # Helper scripts
+│   ├── colors.sh                   # Shared ANSI color definitions (bash/zsh)
+│   └── generate-inventory.py       # Renders inventory.yml from Terraform output
+│
+└── docs/                           # Documentation (Russian)
+    ├── terraform.md                # Infra, remote state, variables
+    ├── ansible.md                  # Roles, vault, preauthkey flow
+    └── kubernetes.md               # ArgoCD, Sealed Secrets, Envoy Gateway, routes
 ```
 
 ## Conventions
@@ -74,7 +85,8 @@ vps/
 ### Kubernetes
 
 - Declarative GitOps via ArgoCD
-- Secrets should be templated with placeholders and populated externally (kubectl create secret / SOPS)
+- Secrets encrypted with **Sealed Secrets** (Bitnami) — safe to commit to git, only the cluster can decrypt
+- Gateway API via **Envoy Gateway** on port 8443, accessible only through Headscale VPN
 
 ### Comments
 
@@ -85,7 +97,8 @@ vps/
 ### Security
 
 - **NEVER** commit API keys (Hetzner), SSH private keys, or passwords
-- CouchDB binds to `0.0.0.0` but is accessible **only** within the K3s/Headscale network layer
+- Kubernetes secrets are encrypted with **Sealed Secrets** — `SealedSecret` manifests are safe to commit, the private key never leaves the cluster
+- Envoy Gateway listens on port 8443 only on the Headscale VPN interface — not reachable from the internet
 - Sensitive Ansible variables live exclusively in `group_vars/all/vault.yml` (encrypted)
 - `.vault_pass` must never be committed — it is the only local secret
 

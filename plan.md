@@ -2,8 +2,9 @@
 
 Приватная real-time синхронизация Obsidian между macOS, Linux и iPhone.
 
-**Стек:** Hetzner Cloud (`cx23`, x86) → Headscale v0.28.0 (native/systemd) → K3s → ArgoCD → CouchDB → Obsidian LiveSync  
-**DNS:** Duck DNS
+**Стек:** Hetzner Cloud (`cx23`, x86) → Headscale v0.28.0 (native/systemd) → K3s → ArgoCD → Envoy Gateway → CouchDB → Obsidian LiveSync  
+**DNS:** Duck DNS  
+**Secrets:** Bitnami Sealed Secrets (зашифрованы в git, расшифровываются только кластером)
 
 > [!NOTE]
 > Все команды и версии проверены по официальной документации (март 2025).
@@ -28,7 +29,13 @@
 > [!IMPORTANT]
 > **Не Docker** — Headscale должен быть в host network, без прослоек. Docker bridge конфликтует с K3s CNI (flannel).
 
-### Репозиторий → **Публичный**, секреты через K8s Secrets / SOPS
+### Репозиторий → **Публичный**, секреты через Sealed Secrets
+
+Kubernetes секреты шифруются `kubeseal` (публичным ключом кластера) и безопасно хранятся в git как `SealedSecret`. Приватный ключ для расшифровки живёт только в кластере.
+
+### Сетевой доступ к K8s сервисам → **Envoy Gateway**
+
+Envoy Gateway слушает на порту `8443` на VPN-интерфейсе (Headscale). Все K8s сервисы (CouchDB, Headscale UI, будущие) маршрутизируются через HTTPRoute. Headscale занимает `443/80` нативно — конфликта нет.
 
 ### Настройка сервера → **Ansible** (не cloud-init)
 Terraform только создаёт сервер. Ansible настраивает. Идемпотентен, безопасно перезапускать.
@@ -39,10 +46,10 @@ Terraform только создаёт сервер. Ansible настраивае
 
 ```
 vps/
-├── AGENTS.md                    # AI Agent Guide
+├── AGENTS.md
 ├── README.md
-├── plan.md                      # Оригинальный план
-├── .gitignore                   # terraform.tfvars, *.pem, kubeconfig
+├── plan.md
+├── .gitignore
 │
 ├── infra/                       # Terraform
 │   ├── main.tf
@@ -55,31 +62,46 @@ vps/
 │   ├── playbook.yml
 │   └── roles/
 │       ├── base/                # apt, ufw, fail2ban
-│       │   └── tasks/
-│       │       └── main.yml
-│       ├── headscale/           # .deb + systemd + config
-│       │   ├── tasks/
-│       │   │   └── main.yml
-│       │   └── templates/
-│       │       └── config.yaml.j2
-│       └── k3s/
-│           └── tasks/
-│               └── main.yml
+│       ├── users/               # системный пользователь, SSH
+│       ├── headscale/           # .deb + systemd + config + автосоздание user + preauthkey
+│       ├── k3s/                 # K3s installer
+│       └── tailscale/           # Tailscale client → self-registration
 │
-├── k8s/                         # GitOps манифесты
+├── k8s/
 │   ├── argocd/
-│   │   └── application.yml
+│   │   ├── application.yml                # CouchDB
+│   │   ├── application-sealed-secrets.yml # Sealed Secrets (Helm)
+│   │   ├── application-envoy-gateway.yml  # Envoy Gateway (Helm)
+│   │   ├── application-gateway-infra.yml  # Gateway API ресурсы
+│   │   └── application-headscale-ui.yml   # Headscale UI
+│   ├── infra/
+│   │   └── gateway/
+│   │       ├── gateway-class.yml           # GatewayClass + EnvoyProxy
+│   │       ├── gateway.yml                # Gateway listener :8443
+│   │       └── headscale-api-httproute.yml # ExternalName Service + /api/v1 прокси
 │   └── apps/
-│       └── couchdb/
+│       ├── couchdb/
+│       │   ├── namespace.yml
+│       │   ├── configmap.yml
+│       │   ├── sealed-secret.yml          # ✅ безопасно в git
+│       │   ├── pvc.yml
+│       │   ├── statefulset.yml
+│       │   ├── service.yml
+│       │   └── httproute.yml              # /couchdb маршрут
+│       └── headscale-ui/
 │           ├── namespace.yml
-│           ├── configmap.yml    # CORS settings
-│           ├── secret.yml       # Template (реальный в SOPS)
-│           ├── pvc.yml
-│           ├── statefulset.yml
-│           └── service.yml
+│           ├── deployment.yml
+│           ├── service.yml
+│           └── httproute.yml              # /web маршрут
 │
-└── scripts/
-    └── setup-devices.sh         # Регистрация устройств
+├── scripts/
+│   ├── colors.sh
+│   └── generate-inventory.py
+│
+└── docs/
+    ├── terraform.md
+    ├── ansible.md
+    └── kubernetes.md
 ```
 
 ---
@@ -87,7 +109,7 @@ vps/
 ## Фаза 0: Подготовка (локальная машина)
 
 - [ ] `brew install terraform kubectl helm ansible`
-- [ ] `brew install argocd`  _(ArgoCD CLI)_
+- [ ] `brew install argocd kubeseal`  _(ArgoCD CLI + Sealed Secrets CLI)_
 - [ ] Зарегистрировать Duck DNS домен
 - [ ] Tailscale установить на macOS, Linux, iPhone
 - [ ] Создать публичный Git-репозиторий, `.gitignore`, `AGENTS.md`
@@ -111,41 +133,50 @@ vps/
 ## Фаза 2: Ansible — настройка сервера
 
 ### Конфигурация inventory.yml
-```yaml
-all:
-  hosts:
-    vps:
-      ansible_host: "<SERVER_IP>"
-      ansible_user: root
-      ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+Генерируется автоматически из Terraform output:
+```bash
+cd ansible && task generate-inventory
 ```
 
 ### Роли
-- **`base`**: `apt update/upgrade`, установка `curl htop fail2ban`, настройка `ufw`
-- **`headscale`**: скачать `.deb` Headscale v0.28.0 (amd64), `apt install ./headscale.deb`, задеплоить `config.yaml` из шаблона Jinja2, `systemctl enable --now headscale`
-- **`k3s`**: установить K3s с флагами `--disable traefik --node-external-ip <SERVER_IP>`
+- **`base`**: apt upgrade, ufw, fail2ban, hostname
+- **`users`**: системный пользователь, SSH-ключ, sudo
+- **`headscale`**: .deb v0.28.0 + systemd + config.yaml (Jinja2) + создание пользователя + автогенерация preauthkey (5 мин) как Ansible fact
+- **`k3s`**: K3s installer + kubeconfig
+- **`tailscale`**: установка + самоподключение сервера к Headscale (использует fact из headscale-роли)
 
-### Запуск
+### Запуск (один прогон — всё автоматически)
 ```bash
-ansible-playbook -i ansible/inventory.yml ansible/playbook.yml
+cd ansible && task play
+```
+
+### Vault-переменные (обязательные)
+```
+vault_server_url               # https://your.duckdns.org
+vault_acme_email               # email для Let's Encrypt
+vault_tls_letsencrypt_hostname  # your.duckdns.org
+vault_headscale_user           # konoval
 ```
 
 > [!IMPORTANT]
-> Headscale конфиг берётся из официального примера для v0.28.0:  
-> `https://github.com/juanfont/headscale/blob/v0.28.0/config-example.yaml`  
-> Основные поля: `server_url`, `listen_addr`, `ip_prefixes`, `db_path`
+> Headscale конфиг основан на официальном примере для v0.28.0:
+> `https://github.com/juanfont/headscale/blob/v0.28.0/config-example.yaml`
 
 ---
 
 ## Фаза 3: Headscale — подключение устройств
 
-```bash
-# На сервере
-headscale users create konoval
-headscale preauthkeys create --user konoval --reusable --expiration 24h
-# → копируем ключ
+### Сервер подключается автоматически
+Headscale-роль генерирует preauthkey (5 мин) и сохраняет как Ansible fact. Tailscale-роль подхватывает его и подключает сервер к Headscale — всё в одном `task play`.
 
-# На каждом устройстве
+### Подключение клиентских устройств (вручную)
+```bash
+# На сервере — создать reusable ключ через Headscale UI (http://k3s-01.hs.local:8443/web)
+# или через SSH:
+ssh root@<SERVER_IP> \
+  "headscale preauthkeys create --user 1 --reusable --expiration 24h"
+
+# На каждом устройстве (macOS, Linux, iPhone)
 tailscale up --login-server=https://<DUCKDNS_DOMAIN> --authkey=<KEY>
 
 # Проверка
@@ -153,51 +184,68 @@ headscale nodes list
 tailscale status
 ```
 
+- [ ] Сервер подключён к Headscale (автоматически через Ansible)
 - [ ] macOS, Linux и iPhone подключены
-- [ ] Все три пингуют сервер по `100.64.x.x`
+- [ ] Все устройства пингуют сервер по `100.64.x.x`
 
 ---
 
-## Фаза 4: ArgoCD + CouchDB
+## Фаза 4: ArgoCD + Sealed Secrets + Envoy Gateway + CouchDB
 
-### ArgoCD установка
+### 4.1 ArgoCD — установка на кластер
 ```bash
+# На сервере (через SSH)
 kubectl create namespace argocd
 kubectl apply -n argocd \
   --server-side --force-conflicts \
   -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
+# Дождаться готовности
+kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=300s
+
 # Начальный пароль
 kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath="{.data.password}" | base64 -d
-
-# Доступ к UI
-kubectl port-forward svc/argocd-server -n argocd 8080:443
-# → https://localhost:8080  (admin / <password>)
 ```
 
 > [!NOTE]
-> Флаги `--server-side --force-conflicts` обязательны начиная с ArgoCD v2.x — некоторые CRDs (ApplicationSet) превышают лимит 262KB на аннотацию при client-side apply.
+> Флаги `--server-side --force-conflicts` обязательны начиная с ArgoCD v2.x — некоторые CRDs превышают лимит 262KB на аннотацию при client-side apply.
 
-### CouchDB манифесты
-- **namespace.yml**: `obsidian-sync`
-- **configmap.yml**: CORS — `origins = *`, `credentials = true`, `methods = GET, POST, PUT, DELETE, HEAD`
-- **secret.yml**: `COUCHDB_USER`, `COUCHDB_PASSWORD`
-- **pvc.yml**: 10Gi, `local-path` (K3s default StorageClass)
-- **statefulset.yml**: 1 реплика, mount PVC в `/opt/couchdb/data`
-- **service.yml**: ClusterIP, порт 5984
-
-### Деплой и проверка
+### 4.2 Задеплоить все ArgoCD Applications
 ```bash
-# ArgoCD подтянет автоматически после коммита
+kubectl apply -f k8s/argocd/
+# ArgoCD установит: Sealed Secrets, Envoy Gateway, Gateway infra, CouchDB, Headscale UI
+```
 
-# Проверка pod
-kubectl get pods -n obsidian-sync
+### 4.3 Создать и запечатать CouchDB Secret
+```bash
+# Установить kubeseal локально
+brew install kubeseal
 
-# Проверка CouchDB
-kubectl port-forward svc/couchdb -n obsidian-sync 5984:5984
-curl http://admin:password@localhost:5984/
-curl -X PUT http://admin:password@localhost:5984/obsidian
+# Создать SealedSecret (дождаться, пока Sealed Secrets controller запустится)
+kubectl create secret generic couchdb-credentials \
+  --namespace obsidian-sync \
+  --from-literal=COUCHDB_USER=admin \
+  --from-literal=COUCHDB_PASSWORD=<your-password> \
+  --dry-run=client -o yaml \
+| kubeseal --format=yaml --scope=namespace-wide \
+> k8s/apps/couchdb/sealed-secret.yml
+
+# Закоммитить и запушить — ArgoCD подтянет автоматически
+git add k8s/apps/couchdb/sealed-secret.yml && git commit -m "seal couchdb credentials" && git push
+```
+
+### 4.4 Проверка
+```bash
+# Все поды живы
+kubectl get pods -A
+
+# Envoy Gateway доступен через VPN
+curl http://k3s-01.hs.local:8443/couchdb/
+
+# Headscale UI
+# Открыть в браузере: http://k3s-01.hs.local:8443/web
+# Settings → вставить API key (headscale apikeys create на сервере)
 ```
 
 ---
@@ -205,7 +253,7 @@ curl -X PUT http://admin:password@localhost:5984/obsidian
 ## Фаза 5: Obsidian LiveSync
 
 - [ ] Установить плагин **Self-hosted LiveSync** (Community Plugins)
-- [ ] CouchDB URL: `http://100.64.x.x:5984`, DB: `obsidian`
+- [ ] CouchDB URL: `http://k3s-01.hs.local:8443/couchdb`, DB: `obsidian`
 - [ ] Включить E2EE, задать парольную фразу
 - [ ] **Rebuild Everything** на основном устройстве
 - [ ] **Copy Setup URI** → настроить Linux и iPhone
@@ -231,14 +279,17 @@ terraform plan                              # No changes
 kubectl get nodes                           # STATUS=Ready
 kubectl get pods --all-namespaces           # Все Running
 
-# CouchDB
-curl http://admin:pass@100.64.x.x:5984/    # {"couchdb":"Welcome",...}
+# CouchDB через Envoy Gateway (VPN)
+curl http://k3s-01.hs.local:8443/couchdb/  # {"couchdb":"Welcome",...}
 
 # Headscale
-headscale nodes list                        # 3 nodes online, STATUS=connected
+headscale nodes list                        # 3+ nodes online, STATUS=connected
+
+# Headscale UI
+# http://k3s-01.hs.local:8443/web
 ```
 
 **Ручные проверки:**
 1. Создать заметку на macOS → появилась на Linux/iPhone за ~5 сек
-2. Перезагрузить сервер → все сервисы поднялись автоматически (systemd)
-3. Отключить Tailscale на устройстве → CouchDB недоступен (изоляция)
+2. Перезагрузить сервер → все сервисы поднялись автоматически (systemd + K3s autostart)
+3. Отключить Tailscale на устройстве → Envoy Gateway недоступен (изоляция)
