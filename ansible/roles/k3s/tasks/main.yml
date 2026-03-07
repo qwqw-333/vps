@@ -12,8 +12,8 @@
   when: not k3s_binary.stat.exists
 
 - name: Install K3s server
-  ansible.builtin.command:
-    cmd: /tmp/k3s-install.sh
+  ansible.builtin.shell:
+    cmd: timeout 120 /tmp/k3s-install.sh
   environment:
     INSTALL_K3S_EXEC: "--disable traefik --write-kubeconfig-mode 644"
   when: not k3s_binary.stat.exists

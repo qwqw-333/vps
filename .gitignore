@@ -17,6 +17,8 @@ override.tf.json
 ansible/inventory.yml
 ansible/.ansible_cache/
 ansible/.vault_pass
+ansible/roles/headscale/files/acme_account+key
+ansible/roles/headscale/files/tls_cert_cache
 
 # Kubernetes
 kubeconfig

@@ -1,0 +1,23 @@
+---
+- name: Update DuckDNS record to current server IP
+  ansible.builtin.uri:
+    url: "https://www.duckdns.org/update?domains={{ duckdns_domain }}&token={{ duckdns_token }}&ip={{ ansible_host }}"
+    return_content: true
+  register: duckdns_result
+  delegate_to: localhost
+  become: false
+  failed_when: "'OK' not in duckdns_result.content"
+  changed_when: true
+  when: duckdns_domain != "" and duckdns_token != ""
+  no_log: true
+
+- name: Verify DNS propagation
+  ansible.builtin.command: dig +short {{ duckdns_domain }}.duckdns.org
+  register: dns_check
+  delegate_to: localhost
+  become: false
+  until: ansible_host in dns_check.stdout
+  retries: 12
+  delay: 5
+  changed_when: false
+  when: duckdns_domain != "" and duckdns_token != ""

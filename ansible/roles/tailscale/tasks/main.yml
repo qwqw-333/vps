@@ -71,6 +71,11 @@
     --authkey={{ tailscale_authkey }}
     --hostname={{ tailscale_hostname }}
     --accept-routes={{ tailscale_accept_routes | lower }}
+    --timeout=30s
+  register: tailscale_up_result
+  until: tailscale_up_result.rc == 0
+  retries: 3
+  delay: 10
   when: not tailscale_connected and tailscale_authkey != ""
   changed_when: true
   no_log: true

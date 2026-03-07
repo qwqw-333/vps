@@ -9,8 +9,11 @@
     acme_email: "{{ vault_acme_email }}"
     tls_letsencrypt_hostname: "{{ vault_tls_letsencrypt_hostname }}"
     headscale_user: "{{ vault_headscale_user }}"
+    duckdns_domain: "{{ vault_duckdns_domain }}"
+    duckdns_token: "{{ vault_duckdns_token }}"
 
   roles:
+    - duckdns
     - base
     - users
     - headscale
