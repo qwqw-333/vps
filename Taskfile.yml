@@ -7,6 +7,9 @@ includes:
   ansible:
     taskfile: ansible/Taskfile.yml
     dir: ansible
+  k8s:
+    taskfile: k8s/Taskfile.yml
+    dir: k8s
 
 tasks:
   default:
@@ -17,27 +20,38 @@ tasks:
       - |
         source scripts/colors.sh
         printf "\n"
-        printf "  ${BOLD}Deploy${NC}\n"
-        printf "  ${BOLD_CYAN}task deploy${NC}          Full deploy: Terraform → Ansible → ArgoCD\n"
-        printf "  ${BOLD_CYAN}task deploy:infra${NC}    Terraform apply\n"
-        printf "  ${BOLD_CYAN}task deploy:server${NC}   Ansible playbook (generate inventory + play)\n"
-        printf "  ${BOLD_CYAN}task deploy:argocd${NC}   Install ArgoCD and apply applications\n"
+        printf "  ${BOLD}Full Deploy${NC}\n"
+        printf "  ${BOLD_CYAN}task deploy${NC}                    Terraform → Ansible → kubeconfig → ArgoCD\n"
+        printf "\n"
+        printf "  ${BOLD}Step-by-step${NC}\n"
+        printf "  ${BOLD_CYAN}task deploy:infra${NC}              Terraform apply\n"
+        printf "  ${BOLD_CYAN}task deploy:server${NC}             Ansible playbook\n"
+        printf "  ${BOLD_CYAN}task k8s:kubeconfig-fetch${NC}      Fetch kubeconfig (VPN access)\n"
+        printf "  ${BOLD_CYAN}task k8s:argocd-install${NC}        Install ArgoCD via Helm\n"
+        printf "\n"
+        printf "  ${BOLD}Sealed Secrets${NC}\n"
+        printf "  ${BOLD_CYAN}task k8s:sealed-secrets:backup${NC}  Backup key to 1Password\n"
+        printf "  ${BOLD_CYAN}task k8s:sealed-secrets:restore${NC} Restore key from 1Password\n"
+        printf "  ${BOLD_CYAN}task k8s:sealed-secrets:status${NC}  Show key status\n"
         printf "\n"
         printf "  ${BOLD}Status${NC}\n"
-        printf "  ${BOLD_CYAN}task status${NC}          Show cluster and VPN status\n"
-        printf "  ${BOLD_CYAN}task ip${NC}              Show server public IP\n"
+        printf "  ${BOLD_CYAN}task status${NC}                    Show cluster and VPN status\n"
+        printf "  ${BOLD_CYAN}task k8s:argocd-status${NC}         Show ArgoCD applications\n"
+        printf "  ${BOLD_CYAN}task k8s:argocd-password${NC}       Get ArgoCD admin password\n"
+        printf "  ${BOLD_CYAN}task ip${NC}                        Show server public IP\n"
         printf "\n"
         printf "  ${BOLD}Sub-taskfiles${NC}\n"
-        printf "  ${BOLD_CYAN}task infra:${NC}...       Terraform commands (task infra:help)\n"
-        printf "  ${BOLD_CYAN}task ansible:${NC}...     Ansible commands (task ansible:help)\n"
+        printf "  ${BOLD_CYAN}task infra:${NC}...                 Terraform commands (task infra:help)\n"
+        printf "  ${BOLD_CYAN}task ansible:${NC}...               Ansible commands (task ansible:help)\n"
         printf "\n"
 
   deploy:
-    desc: "Full deploy: Terraform → Ansible → ArgoCD"
+    desc: "Full deploy: Terraform → Ansible → kubeconfig → ArgoCD"
     cmds:
       - task: deploy:infra
       - task: deploy:server
-      - task: deploy:argocd
+      - task: k8s:kubeconfig-fetch
+      - task: k8s:argocd-install
 
   deploy:infra:
     desc: Terraform apply
@@ -61,64 +75,19 @@ tasks:
       - python3 ../scripts/generate-inventory.py
       - ansible-playbook playbook.yml
 
-  deploy:argocd:
-    desc: Install ArgoCD and apply all applications
-    vars:
-      SERVER_IP:
-        sh: cd infra && terraform output -raw server_ip
-    preconditions:
-      - sh: command -v kubectl
-        msg: "kubectl not installed — brew install kubectl"
-      - sh: command -v ssh
-        msg: "ssh not available"
-    cmds:
-      - |
-        source scripts/colors.sh
-        printf "${BOLD_CYAN}Installing ArgoCD on cluster...${NC}\n"
-        ssh -o StrictHostKeyChecking=no root@{{.SERVER_IP}} '
-          kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - &&
-          kubectl apply -n argocd --server-side --force-conflicts \
-            -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml &&
-          kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=300s
-        '
-      - |
-        source scripts/colors.sh
-        printf "${BOLD_CYAN}Applying ArgoCD applications...${NC}\n"
-        scp -o StrictHostKeyChecking=no -r k8s/argocd/ root@{{.SERVER_IP}}:/tmp/argocd-apps/
-        ssh -o StrictHostKeyChecking=no root@{{.SERVER_IP}} '
-          kubectl apply -f /tmp/argocd-apps/ &&
-          rm -rf /tmp/argocd-apps/
-        '
-      - |
-        source scripts/colors.sh
-        PASS=$(ssh -o StrictHostKeyChecking=no root@{{.SERVER_IP}} \
-          "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d")
-        printf "\n${BOLD_GREEN}ArgoCD installed.${NC}\n"
-        printf "  Admin password: ${BOLD}${PASS}${NC}\n"
-        printf "  ArgoCD will now sync: Sealed Secrets, Envoy Gateway, CouchDB, Headscale UI\n\n"
-
   status:
     desc: Show cluster and VPN status
-    vars:
-      SERVER_IP:
-        sh: cd infra && terraform output -raw server_ip
     cmds:
       - |
         source scripts/colors.sh
-        printf "\n${BOLD}Cluster status:${NC}\n"
-        ssh -o StrictHostKeyChecking=no root@{{.SERVER_IP}} '
-          echo "--- Nodes ---"
-          kubectl get nodes -o wide
-          echo ""
-          echo "--- Pods (all namespaces) ---"
-          kubectl get pods -A
-          echo ""
-          echo "--- Headscale nodes ---"
-          headscale nodes list
-          echo ""
-          echo "--- Tailscale VPN IP ---"
-          tailscale ip -4
-        '
+        printf "\n${BOLD}Cluster nodes:${NC}\n"
+        kubectl get nodes -o wide
+        printf "\n${BOLD}Pods (all namespaces):${NC}\n"
+        kubectl get pods -A
+        printf "\n${BOLD}ArgoCD applications:${NC}\n"
+        kubectl get applications -n argocd 2>/dev/null || printf "  ArgoCD not installed\n"
+        printf "\n${BOLD}Headscale nodes:${NC}\n"
+        ssh -o StrictHostKeyChecking=no root@$(cd infra && terraform output -raw server_ip) 'headscale nodes list'
 
   ip:
     desc: Show server public IP

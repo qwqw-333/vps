@@ -22,6 +22,7 @@ ansible/roles/headscale/files/tls_cert_cache
 
 # Kubernetes
 kubeconfig
+sealed-secrets-key.yaml
 *.key
 *.crt
 

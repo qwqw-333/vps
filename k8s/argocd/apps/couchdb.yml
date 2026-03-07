@@ -7,7 +7,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: "https://github.com/qwqw-333/vps.git"
+    repoURL: https://github.com/qwqw-333/vps.git
     targetRevision: HEAD
     path: k8s/apps/couchdb
   destination:

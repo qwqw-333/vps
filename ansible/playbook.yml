@@ -17,5 +17,5 @@
     - base
     - users
     - headscale
-    - k3s
     - tailscale
+    - k3s
