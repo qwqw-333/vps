@@ -8,6 +8,7 @@
     server_public_ip: "{{ ansible_host }}"
     acme_email: "{{ vault_acme_email }}"
     tls_letsencrypt_hostname: "{{ vault_tls_letsencrypt_hostname }}"
+    headscale_user: "{{ vault_headscale_user }}"
 
   roles:
     - base

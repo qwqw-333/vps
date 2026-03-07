@@ -2,6 +2,7 @@
 headscale_version: "0.28.0"
 headscale_arch: "amd64"
 headscale_base_domain: "hs.local"
+headscale_user: ""
 acme_email: ""
 tls_letsencrypt_hostname: ""
 

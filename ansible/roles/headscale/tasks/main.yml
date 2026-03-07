@@ -1,7 +1,4 @@
 ---
-# Role: headscale
-# Installs Headscale v0.28.0 native via .deb and configures it with systemd
-
 - name: Check if ufw is installed
   ansible.builtin.command: dpkg-query -W -f='${Status}' ufw
   register: ufw_installed
@@ -44,3 +41,55 @@
     enabled: true
     state: started
     daemon_reload: true
+
+- name: Wait for Headscale to initialize
+  ansible.builtin.command: headscale version
+  register: headscale_check
+  until: headscale_check.rc == 0
+  retries: 10
+  delay: 2
+  changed_when: false
+  when: headscale_user != ""
+
+- name: Create Headscale user {{ headscale_user }}
+  ansible.builtin.command: headscale users create {{ headscale_user }}
+  register: headscale_user_result
+  failed_when:
+    - headscale_user_result.rc != 0
+    - "'already exists' not in headscale_user_result.stderr"
+  changed_when: headscale_user_result.rc == 0
+  when: headscale_user != ""
+
+- name: Get Headscale user ID for {{ headscale_user }}
+  ansible.builtin.command: headscale users list -o json
+  register: headscale_users_json
+  changed_when: false
+  when: headscale_user != ""
+
+- name: Set headscale_user_id fact
+  ansible.builtin.set_fact:
+    headscale_user_id: >-
+      {{
+        (headscale_users_json.stdout | from_json)
+        | selectattr('name', 'equalto', headscale_user)
+        | map(attribute='id')
+        | first
+      }}
+  when: headscale_user != ""
+
+- name: Generate preauthkey for server self-registration
+  ansible.builtin.command: >
+    headscale preauthkeys create
+    --user {{ headscale_user_id }}
+    --expiration 5m
+    -o json
+  register: headscale_preauthkey_json
+  changed_when: true
+  no_log: true
+  when: headscale_user != ""
+
+- name: Set tailscale_authkey fact for tailscale role
+  ansible.builtin.set_fact:
+    tailscale_authkey: "{{ (headscale_preauthkey_json.stdout | from_json).key }}"
+  no_log: true
+  when: headscale_user != ""

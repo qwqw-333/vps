@@ -1,7 +1,4 @@
 ---
-# Role: tailscale
-# Installs Tailscale client and registers the server as a node in Headscale
-
 - name: Add Tailscale apt signing key
   ansible.builtin.get_url:
     url: https://pkgs.tailscale.com/stable/debian/bookworm.noarmor.gpg
@@ -77,8 +74,3 @@
   when: not tailscale_connected and tailscale_authkey != ""
   changed_when: true
   no_log: true
-
-- name: Warn if authkey not provided and Tailscale not connected
-  ansible.builtin.debug:
-    msg: "Tailscale is not connected and no authkey was provided. Run with: -e tailscale_authkey=<key>"
-  when: not tailscale_connected and tailscale_authkey == ""
