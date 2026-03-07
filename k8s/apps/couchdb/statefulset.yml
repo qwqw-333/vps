@@ -30,8 +30,7 @@ spec:
             - name: data
               mountPath: /opt/couchdb/data
             - name: config
-              mountPath: /opt/couchdb/etc/local.d/local.ini
-              subPath: local.ini
+              mountPath: /opt/couchdb/etc/local.d
               readOnly: true
           resources:
             requests:
