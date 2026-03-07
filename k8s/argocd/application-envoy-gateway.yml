@@ -2,20 +2,23 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: couchdb
+  name: envoy-gateway
   namespace: argocd
 spec:
   project: default
   source:
-    repoURL: "https://github.com/qwqw-333/vps.git"
-    targetRevision: HEAD
-    path: k8s/apps/couchdb
+    repoURL: oci://docker.io/envoyproxy
+    chart: gateway-helm
+    targetRevision: v1.3.0
+    helm:
+      releaseName: eg
   destination:
     server: https://kubernetes.default.svc
-    namespace: obsidian-sync
+    namespace: envoy-gateway-system
   syncPolicy:
     automated:
       selfHeal: true
       prune: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true

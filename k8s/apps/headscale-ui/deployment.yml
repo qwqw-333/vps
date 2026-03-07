@@ -1,0 +1,37 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: headscale-ui
+  namespace: headscale-ui
+  labels:
+    app: headscale-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: headscale-ui
+  template:
+    metadata:
+      labels:
+        app: headscale-ui
+    spec:
+      containers:
+        - name: headscale-ui
+          image: ghcr.io/gurucomputing/headscale-ui:latest
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "50m"
+          readinessProbe:
+            httpGet:
+              path: /web
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
