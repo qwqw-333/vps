@@ -39,5 +39,8 @@ spec:
             value: /oidc
       backendRefs:
         - name: headscale-api
+          group: ""
+          kind: Service
           namespace: envoy-gateway-system
           port: 443
+          weight: 1
