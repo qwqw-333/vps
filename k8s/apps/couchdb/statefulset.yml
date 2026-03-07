@@ -17,6 +17,18 @@ spec:
       labels:
         app: couchdb
     spec:
+      initContainers:
+        - name: copy-config
+          image: busybox
+          command:
+            - sh
+            - -c
+            - cp /config-src/local.ini /config-dst/local.ini && chmod 644 /config-dst/local.ini
+          volumeMounts:
+            - name: config-src
+              mountPath: /config-src
+            - name: config-dst
+              mountPath: /config-dst
       containers:
         - name: couchdb
           image: couchdb:3.4
@@ -29,9 +41,8 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /opt/couchdb/data
-            - name: config
-              mountPath: /opt/couchdb/etc/local.d/local.ini
-              subPath: local.ini
+            - name: config-dst
+              mountPath: /opt/couchdb/etc/local.d
           resources:
             requests:
               memory: "256Mi"
@@ -55,6 +66,8 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: couchdb-data
-        - name: config
+        - name: config-src
           configMap:
             name: couchdb-config
+        - name: config-dst
+          emptyDir: {}
