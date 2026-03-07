@@ -20,7 +20,7 @@ spec:
         - name: headscale-ui
           image: ghcr.io/gurucomputing/headscale-ui:latest
           ports:
-            - containerPort: 80
+            - containerPort: 8080
               name: http
           resources:
             requests:
@@ -32,6 +32,6 @@ spec:
           readinessProbe:
             httpGet:
               path: /web
-              port: 80
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
