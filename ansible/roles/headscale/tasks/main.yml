@@ -27,16 +27,6 @@
     mode: "0640"
   notify: Restart headscale stack
 
-- name: Deploy ACL policy
-  ansible.builtin.copy:
-    src: policy.json
-    dest: "{{ headscale_dir }}/config/policy.json"
-    owner: root
-    group: root
-    mode: "0644"
-    force: false
-  notify: Restart headscale stack
-
 - name: Deploy Headplane config
   ansible.builtin.template:
     src: headplane-config.yaml.j2

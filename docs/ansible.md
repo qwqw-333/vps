@@ -128,6 +128,10 @@ Deployed to `/opt/headscale/`:
 | `config/headscale.yaml` | Headscale server configuration |
 | `config/headplane.yaml` | Headplane web UI configuration (OIDC via Authelia) |
 
+### ACL Policy
+
+ACL policy is managed via the database (`policy.mode: database` in headscale config). Edit ACLs through the Headplane web UI at `https://vpn.qwqw333.work/admin`.
+
 ### Post-deploy steps
 
 1. Generate a long-lived API key for Headplane:
