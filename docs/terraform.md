@@ -1,78 +1,89 @@
 # Terraform
 
-Управление инфраструктурой на Hetzner Cloud через Terraform с remote state в HCP Terraform (Terraform Cloud).
+Infrastructure provisioning on Hetzner Cloud with Cloudflare DNS management. Remote state is stored in HCP Terraform (Terraform Cloud).
 
-## Структура
+## Structure
 
 ```
 infra/
-├── main.tf           # Провайдер, backend, основные ресурсы
-├── variables.tf      # Объявление переменных
-├── outputs.tf        # Выходные значения
-└── terraform.tfvars  # Локальные переменные (не коммитить, в .gitignore)
+├── main.tf           # Providers, backend, server, firewall, Cloudflare DNS
+├── variables.tf      # Input variables
+├── outputs.tf        # Output values
+├── Taskfile.yml      # task plan, apply, ip
+└── terraform.tfvars  # Local overrides (in .gitignore, not committed)
 ```
 
-## Ресурсы
+## Resources
 
-| Ресурс | Имя | Описание |
-|---|---|---|
-| `hcloud_server` | `k3s-01` | Основной сервер (cx23, Debian 12, fsn1) |
-| `hcloud_primary_ip` | `ip-k3s-01` | Статический IPv4, не удаляется при пересоздании сервера |
-| `hcloud_firewall` | `fw-default` | Правила фаервола, применяется по label |
+| Resource | Name | Description |
+|----------|------|-------------|
+| `hcloud_server` | `vps-01` | Debian 12, cx23, fsn1 datacenter |
+| `hcloud_firewall` | `fw-default` | Inbound: 22/tcp (SSH), 443/tcp (HTTPS). Applied via label selector |
+| `cloudflare_dns_record` | `sync` | Proxied A-record → server IP |
 
 ## Remote State — HCP Terraform
 
-State хранится в [HCP Terraform](https://app.terraform.io) (организация `qwqw-org`, workspace `hetzner-personal`).
+State is stored in [HCP Terraform](https://app.terraform.io) (organization `qwqw-org`, workspace `hetzner-personal`).
 
-- Workflow: **CLI-driven** — команды запускаются локально, выполняются удалённо
-- `terraform plan` и `terraform apply` выполняются на серверах HCP Terraform
-- Локальные `*.tfstate` файлы не используются
+- **CLI-driven workflow** — commands run locally, execution happens remotely
+- No local `*.tfstate` files
 
-## Переменные
+## Variables
 
-| Переменная | Где хранится | Описание |
-|---|---|---|
-| `hcloud_token` | HCP Terraform (Sensitive) | API токен Hetzner Cloud |
-| `server_type` | `variables.tf` (default: `cx23`) | Тип сервера |
-| `location` | `variables.tf` (default: `fsn1`) | Датацентр |
-| `image` | `variables.tf` (default: `debian-12`) | Образ ОС |
+| Variable | Source | Description |
+|----------|--------|-------------|
+| `hcloud_token` | HCP Terraform (sensitive) | Hetzner Cloud API token |
+| `cloudflare_api_token` | HCP Terraform (sensitive) | Cloudflare API token (DNS edit) |
+| `server_type` | Default: `cx23` | Server type |
+| `location` | Default: `fsn1` | Datacenter location |
+| `image` | Default: `debian-12` | OS image |
+| `cloudflare_zone` | Default: `qwqw333.work` | Cloudflare DNS zone |
+| `cloudflare_subdomain` | Default: `obsidian` | Subdomain for CouchDB endpoint |
 
-> Локальный `terraform.tfvars` имеет приоритет над переменными в HCP Terraform.
-> Используй его только для временных экспериментов.
+> A local `terraform.tfvars` overrides HCP Terraform variables. Use it only for temporary experiments.
 
-## Первоначальная настройка на новой машине
+## Outputs
+
+| Output | Description |
+|--------|-------------|
+| `server_ip` | Public IPv4 address |
+| `server_name` | Server hostname |
+| `server_status` | Current server status |
+| `couchdb_domain` | FQDN for CouchDB (e.g. `obsidian.qwqw333.work`) |
+
+## Cloudflare DNS
+
+The Cloudflare provider manages the DNS A-record automatically on `terraform apply`.
+
+- **Proxied mode** (`proxied = true`) — traffic goes through Cloudflare's edge network
+- Caddy uses a Cloudflare Origin Certificate for the Cloudflare ↔ origin connection
+- On server recreation, the DNS record updates automatically with the new IP
+
+## Initial Setup
 
 ```bash
-# 1. Установить Terraform из официального tap
+# 1. Install Terraform
 brew tap hashicorp/tap
 brew install hashicorp/tap/terraform
 
-# 2. Авторизоваться в HCP Terraform
+# 2. Authenticate with HCP Terraform
 terraform login
 
-# 3. Инициализировать
+# 3. Initialize (downloads Hetzner + Cloudflare providers)
 cd infra/
 terraform init
 ```
 
-## Основные команды
+## Commands
 
 ```bash
-# Посмотреть планируемые изменения
-terraform plan
-
-# Применить изменения
-terraform apply
-
-# Посмотреть текущий state
-terraform show
-
-# Посмотреть outputs
-terraform output
+task plan       # Preview changes
+task apply      # Apply changes
+terraform output  # Show outputs
 ```
 
-## Безопасность
+## Security
 
-- `terraform.tfvars` добавлен в `.gitignore` — никогда не коммитить
-- `hcloud_token` хранится только в HCP Terraform как Sensitive переменная
-- Primary IP создан с `auto_delete = false` — не удалится случайно вместе с сервером
+- `terraform.tfvars` is in `.gitignore` — never committed
+- `hcloud_token` and `cloudflare_api_token` are stored exclusively in HCP Terraform as sensitive variables
+- No secrets in Terraform files or state (state is remote and encrypted by HCP)

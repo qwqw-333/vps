@@ -13,3 +13,4 @@ base_packages:
 
 base_ufw_rules:
   - { port: "22", proto: tcp, comment: "SSH" }
+  - { port: "443", proto: tcp, comment: "HTTPS (Caddy)" }

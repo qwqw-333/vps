@@ -1,0 +1,37 @@
+services:
+  caddy:
+    image: {{ caddy_image }}
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+
+  couchdb:
+    image: {{ couchdb_image }}
+    container_name: couchdb
+    restart: unless-stopped
+    environment:
+      COUCHDB_USER: "{{ couchdb_user }}"
+      COUCHDB_PASSWORD: "{{ couchdb_password }}"
+    ports:
+      - "127.0.0.1:5984:5984"
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+      - ./local.ini:/opt/couchdb/etc/local.d/local.ini:ro
+    networks:
+      - internal
+
+volumes:
+  couchdb_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:

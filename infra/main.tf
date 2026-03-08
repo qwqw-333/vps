@@ -13,11 +13,19 @@ terraform {
       source  = "hetznercloud/hcloud"
       version = "~> 1.45"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.0"
+    }
   }
 }
 
 provider "hcloud" {
   token = var.hcloud_token
+}
+
+provider "cloudflare" {
+  api_token = var.cloudflare_api_token
 }
 
 # SSH key from Hetzner
@@ -26,8 +34,8 @@ data "hcloud_ssh_key" "default" {
 }
 
 # Create Server
-resource "hcloud_server" "k3s_01" {
-  name        = "k3s-01"
+resource "hcloud_server" "vps_01" {
+  name        = "vps-01"
   image       = var.image
   server_type = var.server_type
   location    = var.location
@@ -70,35 +78,11 @@ resource "hcloud_firewall" "fw_default" {
     source_ips = ["0.0.0.0/0"]
   }
 
-  # HTTP (Let's Encrypt ACME challenge)
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "80"
-    source_ips = ["0.0.0.0/0"]
-  }
-
-  # Headscale / HTTPS
+  # HTTPS (Caddy — Cloudflare proxied traffic)
   rule {
     direction  = "in"
     protocol   = "tcp"
     port       = "443"
-    source_ips = ["0.0.0.0/0"]
-  }
-
-  # Headscale DERP (STUN)
-  rule {
-    direction  = "in"
-    protocol   = "udp"
-    port       = "3478"
-    source_ips = ["0.0.0.0/0"]
-  }
-
-  # Headscale WireGuard
-  rule {
-    direction  = "in"
-    protocol   = "udp"
-    port       = "41641"
     source_ips = ["0.0.0.0/0"]
   }
 
@@ -122,4 +106,20 @@ resource "hcloud_firewall" "fw_default" {
     protocol        = "icmp"
     destination_ips = ["0.0.0.0/0"]
   }
+}
+
+# Cloudflare DNS — A-record
+data "cloudflare_zone" "main" {
+  filter = {
+    name = var.cloudflare_zone
+  }
+}
+
+resource "cloudflare_dns_record" "sync" {
+  zone_id = data.cloudflare_zone.main.zone_id
+  name    = var.cloudflare_subdomain
+  content = hcloud_server.vps_01.ipv4_address
+  type    = "A"
+  proxied = true
+  ttl     = 1
 }

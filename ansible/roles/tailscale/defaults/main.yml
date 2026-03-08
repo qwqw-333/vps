@@ -1,5 +1,0 @@
----
-tailscale_hostname: "{{ inventory_hostname }}"
-tailscale_login_server: "{{ server_url }}"
-tailscale_authkey: ""
-tailscale_accept_routes: true

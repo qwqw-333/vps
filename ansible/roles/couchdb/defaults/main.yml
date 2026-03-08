@@ -1,0 +1,8 @@
+---
+couchdb_dir: /opt/couchdb
+couchdb_image: couchdb:3.4
+couchdb_uid: "5984"
+caddy_image: caddy:2
+couchdb_user: ""
+couchdb_password: ""
+couchdb_domain: ""

@@ -13,18 +13,12 @@ override.tf.json
 
 # Ansible
 *.retry
-*.pem
 ansible/inventory.yml
 ansible/.ansible_cache/
 ansible/.vault_pass
-ansible/roles/headscale/files/acme_account+key
-ansible/roles/headscale/files/tls_cert_cache
 
-# Kubernetes
-kubeconfig
-sealed-secrets-key.yaml
-*.key
-*.crt
+# Certificates
+*.pem
 
 # OS
 .DS_Store

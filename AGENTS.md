@@ -1,20 +1,20 @@
 # AGENTS.md — AI Agent Guide
 
-Infrastructure as Code for a self-hosted Obsidian sync server on Hetzner Cloud: Terraform, Ansible, Headscale, K3s, ArgoCD, Envoy Gateway, CouchDB.
+Infrastructure as Code for a self-hosted Obsidian sync server on Hetzner Cloud: Terraform (Hetzner + Cloudflare), Ansible, Docker Compose, Caddy, CouchDB.
 
 ## Project Structure
 
 ```
 vps/
-├── infra/                          # Terraform (Hetzner Cloud provisioning)
+├── infra/                          # Terraform (Hetzner Cloud + Cloudflare DNS)
 │   ├── Taskfile.yml                # task init, plan, apply, ip
-│   ├── main.tf
+│   ├── main.tf                     # Hetzner server, firewall, Cloudflare DNS record
 │   ├── variables.tf
 │   ├── outputs.tf
 │   └── terraform.tfvars            # in .gitignore
 │
 ├── ansible/                        # Server configuration (Ansible)
-│   ├── Taskfile.yml                # task generate-inventory, play, ping
+│   ├── Taskfile.yml                # task generate-inventory, play, ping, status
 │   ├── ansible.cfg
 │   ├── playbook.yml
 │   ├── inventory.yml               # Generated — do not edit (in .gitignore)
@@ -24,46 +24,31 @@ vps/
 │   │   └── all/
 │   │       └── vault.yml           # Encrypted secrets (ansible-vault)
 │   └── roles/
-│       ├── base/                   # apt, ufw, fail2ban
-│       ├── users/                  # System users, SSH keys, sudo
-│       ├── headscale/              # .deb + systemd + config template
-│       ├── k3s/                    # K3s installer
-│       └── tailscale/              # Tailscale client → Headscale
-│
-├── k8s/                            # Kubernetes manifests (GitOps)
-│   ├── argocd/
-│   │   ├── application.yml                 # CouchDB
-│   │   ├── application-sealed-secrets.yml  # Sealed Secrets controller (Helm)
-│   │   ├── application-envoy-gateway.yml   # Envoy Gateway (Helm)
-│   │   ├── application-gateway-infra.yml   # Gateway API resources
-│   │   ├── application-headscale-ui.yml    # Headscale UI
-│   ├── infra/
-│   │   └── gateway/                # GatewayClass, Gateway, Headscale API proxy
-│   └── apps/
-│       ├── couchdb/                # Namespace, ConfigMap, SealedSecret, PVC, StatefulSet, Service, HTTPRoute
-│       └── headscale-ui/           # Deployment, Service, HTTPRoute
+│       ├── base/                   # hostname, apt, ufw, fail2ban
+│       ├── users/                  # System user, SSH key, sudo
+│       ├── docker/                 # Docker CE + Compose plugin
+│       └── couchdb/                # Caddy + CouchDB (docker-compose), cluster init
 │
 ├── scripts/                        # Helper scripts
 │   ├── colors.sh                   # Shared ANSI color definitions (bash/zsh)
 │   └── generate-inventory.py       # Renders inventory.yml from Terraform output
 │
-└── docs/                           # Documentation (Russian)
-    ├── terraform.md                # Infra, remote state, variables
-    ├── ansible.md                  # Roles, vault, preauthkey flow
-    └── kubernetes.md               # ArgoCD, Sealed Secrets, Envoy Gateway, routes
+└── docs/                           # Documentation
+    ├── terraform.md                # Infra, remote state, Cloudflare DNS
+    └── ansible.md                  # Roles, vault, CouchDB deployment
 ```
 
 ## Conventions
 
 ### Language
 
-- **Code, comments, AGENTS.md**: English
-- **README.md, user-facing docs**: Russian
+- **All files** (code, comments, docs, README): English
 
 ### Terraform
 
 - `terraform.tfvars` must NEVER be committed
 - Use `Taskfile.yml` in `infra/` for all operations (`task plan`, `task apply`, `task ip`)
+- `hcloud_token` and `cloudflare_api_token` stored as HCP Terraform Sensitive variables
 
 ### Ansible
 
@@ -71,10 +56,10 @@ vps/
 - `ansible/inventory.yml` is **generated** by `scripts/generate-inventory.py` — never edit manually, edit `inventory.yml.j2` instead
 - Role variables with sensible defaults go in `roles/<name>/defaults/main.yml`; project-specific overrides go in `playbook.yml vars:`
 - Roles must be idempotent and self-contained (no implicit dependencies on other roles)
-- Use FQCN for all modules: `ansible.builtin.*`, `ansible.posix.*`, `community.general.*`
+- Use FQCN for all modules: `ansible.builtin.*`, `ansible.posix.*`, `community.general.*`, `community.docker.*`
 - Secrets are stored in `group_vars/all/vault.yml`, encrypted with `ansible-vault`
 - Vault password file: `.vault_pass` (in `.gitignore`), configured via `vault_password_file` in `ansible.cfg`
-- Vault variables use the `vault_` prefix: `vault_server_url`, `vault_acme_email`, etc.
+- Vault variables use the `vault_` prefix: `vault_couchdb_user`, `vault_couchdb_password`, etc.
 
 ### Scripts
 
@@ -82,11 +67,11 @@ vps/
 - Shared ANSI color definitions for **Python scripts**: define inline as a `_colors()` function that respects the `NO_COLOR` env var (https://no-color.org). Do NOT create a separate `colors.py` unless there are 3+ Python scripts that need it
 - Python scripts must use **stdlib only** (no `pip install`) — exception: `jinja2` is acceptable (always present as an Ansible dependency)
 
-### Kubernetes
+### Docker
 
-- Declarative GitOps via ArgoCD
-- Secrets encrypted with **Sealed Secrets** (Bitnami) — safe to commit to git, only the cluster can decrypt
-- Gateway API via **Envoy Gateway** on port 8443, accessible only through Headscale VPN
+- CouchDB and Caddy run as Docker Compose services in `/opt/couchdb/` on the server
+- Caddy terminates TLS using a **Cloudflare Origin Certificate** (traffic is proxied through Cloudflare)
+- CouchDB is not exposed externally — accessible only via Caddy reverse proxy and `127.0.0.1:5984` on the server
 
 ### Comments
 
@@ -96,11 +81,10 @@ vps/
 
 ### Security
 
-- **NEVER** commit API keys (Hetzner), SSH private keys, or passwords
-- Kubernetes secrets are encrypted with **Sealed Secrets** — `SealedSecret` manifests are safe to commit, the private key never leaves the cluster
-- Envoy Gateway listens on port 8443 only on the Headscale VPN interface — not reachable from the internet
+- **NEVER** commit API keys (Hetzner, Cloudflare), SSH private keys, passwords, or certificates
 - Sensitive Ansible variables live exclusively in `group_vars/all/vault.yml` (encrypted)
 - `.vault_pass` must never be committed — it is the only local secret
+- CouchDB is protected by: Cloudflare proxy + Origin Certificate + E2E encryption (LiveSync) + CouchDB auth (`require_valid_user = true`)
 
 ### Ansible Vault
 

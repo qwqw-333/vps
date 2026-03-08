@@ -4,18 +4,16 @@
   become: true
 
   vars:
-    server_url: "{{ vault_server_url }}"
-    server_public_ip: "{{ ansible_host }}"
-    acme_email: "{{ vault_acme_email }}"
-    tls_letsencrypt_hostname: "{{ vault_tls_letsencrypt_hostname }}"
-    headscale_user: "{{ vault_headscale_user }}"
-    duckdns_domain: "{{ vault_duckdns_domain }}"
-    duckdns_token: "{{ vault_duckdns_token }}"
+    couchdb_user: "{{ vault_couchdb_user }}"
+    couchdb_password: "{{ vault_couchdb_password }}"
+    couchdb_domain: "{{ vault_couchdb_domain }}"
+    origin_cert: "{{ vault_origin_cert }}"
+    origin_key: "{{ vault_origin_key }}"
+    docker_users:
+      - "{{ app_user }}"
 
   roles:
-    - duckdns
     - base
     - users
-    - headscale
-    - tailscale
-    - k3s
+    - docker
+    - couchdb

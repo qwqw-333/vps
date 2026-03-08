@@ -12,6 +12,7 @@ tasks:
         printf "  ${BOLD_CYAN}task generate-inventory${NC}    Generate inventory.yml from Terraform output\n"
         printf "  ${BOLD_CYAN}task ping${NC}                  Check SSH connectivity to all hosts\n"
         printf "  ${BOLD_CYAN}task play${NC}                  Run the playbook (inventory must exist)\n"
+        printf "  ${BOLD_CYAN}task status${NC}                Show CouchDB stack status\n"
         printf "\n"
 
   generate-inventory:
@@ -34,3 +35,11 @@ tasks:
         msg: "inventory.yml not found — run 'task generate-inventory' first"
     cmds:
       - ansible all -m ping
+
+  status:
+    desc: Show CouchDB docker compose status on the server
+    preconditions:
+      - sh: test -f inventory.yml
+        msg: "inventory.yml not found — run 'task generate-inventory' first"
+    cmds:
+      - ansible all -a "docker compose -f /opt/couchdb/docker-compose.yml ps"
