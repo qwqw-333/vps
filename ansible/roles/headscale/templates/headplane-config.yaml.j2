@@ -1,0 +1,21 @@
+---
+# {{ ansible_managed }}
+
+server:
+  host: 0.0.0.0
+  port: 3000
+  cookie_secret: "{{ headplane_cookie_secret }}"
+
+headscale:
+  url: https://{{ headscale_domain }}
+  config_path: /etc/headscale/config.yaml
+
+oidc:
+  issuer: https://{{ authelia_domain }}
+  client_id: headplane
+  client_secret: '{{ authelia_headplane_client_secret }}'
+  token_endpoint_auth_method: client_secret_basic
+  redirect_uri: https://{{ headscale_domain }}/admin/oidc/callback
+  # API key login disabled — use SSO via Authelia
+  disable_api_key_login: true
+  headscale_api_key: '{{ headplane_headscale_api_key }}'

@@ -1,0 +1,15 @@
+---
+authelia_dir: /opt/authelia
+authelia_image: authelia/authelia:latest
+authelia_domain: ""
+authelia_session_secret: ""
+authelia_storage_encryption_key: ""
+authelia_oidc_hmac_secret: ""
+authelia_oidc_jwks_private_key: ""
+authelia_headplane_client_secret: ""
+authelia_headplane_client_secret_hash: ""
+authelia_user: ""
+authelia_user_displayname: ""
+authelia_user_email: ""
+authelia_user_password_hash: ""
+headscale_domain: ""

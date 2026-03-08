@@ -1,6 +1,6 @@
 ---
 # Role: couchdb
-# Deploys CouchDB + Caddy (reverse proxy with Cloudflare Origin CA cert) via Docker Compose
+# Deploys CouchDB via Docker Compose (Caddy reverse proxy managed by the caddy role)
 
 - name: Create CouchDB deployment directory
   ansible.builtin.file:
@@ -10,47 +10,10 @@
     group: root
     mode: "0750"
 
-- name: Create certs directory
-  ansible.builtin.file:
-    path: "{{ couchdb_dir }}/certs"
-    state: directory
-    owner: root
-    group: root
-    mode: "0700"
-
-- name: Deploy origin certificate
-  ansible.builtin.copy:
-    content: "{{ origin_cert }}"
-    dest: "{{ couchdb_dir }}/certs/origin-cert.pem"
-    owner: root
-    group: root
-    mode: "0640"
-  no_log: true
-  notify: Restart couchdb stack
-
-- name: Deploy origin private key
-  ansible.builtin.copy:
-    content: "{{ origin_key }}"
-    dest: "{{ couchdb_dir }}/certs/origin-key.pem"
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
-  notify: Restart couchdb stack
-
-- name: Deploy docker-compose.yml
+- name: Deploy compose.yaml
   ansible.builtin.template:
-    src: docker-compose.yml.j2
-    dest: "{{ couchdb_dir }}/docker-compose.yml"
-    owner: root
-    group: root
-    mode: "0640"
-  notify: Restart couchdb stack
-
-- name: Deploy Caddyfile
-  ansible.builtin.template:
-    src: Caddyfile.j2
-    dest: "{{ couchdb_dir }}/Caddyfile"
+    src: compose.yaml.j2
+    dest: "{{ couchdb_dir }}/compose.yaml"
     owner: root
     group: root
     mode: "0640"

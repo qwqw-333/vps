@@ -123,3 +123,23 @@ resource "cloudflare_dns_record" "sync" {
   proxied = true
   ttl     = 1
 }
+
+# Cloudflare DNS — VPN (Headscale)
+resource "cloudflare_dns_record" "vpn" {
+  zone_id = data.cloudflare_zone.main.zone_id
+  name    = "vpn"
+  content = hcloud_server.vps_01.ipv4_address
+  type    = "A"
+  proxied = true
+  ttl     = 1
+}
+
+# Cloudflare DNS — Auth (Authelia)
+resource "cloudflare_dns_record" "auth" {
+  zone_id = data.cloudflare_zone.main.zone_id
+  name    = "auth"
+  content = hcloud_server.vps_01.ipv4_address
+  type    = "A"
+  proxied = true
+  ttl     = 1
+}

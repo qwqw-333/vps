@@ -1,0 +1,6 @@
+---
+caddy_dir: /opt/caddy
+caddy_image: caddy:2
+couchdb_domain: ""
+headscale_domain: ""
+authelia_domain: ""

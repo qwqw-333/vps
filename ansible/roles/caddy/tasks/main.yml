@@ -1,0 +1,87 @@
+---
+# Role: caddy
+# Deploys Caddy reverse proxy with Cloudflare Origin CA cert via Docker Compose
+
+# --- Migration: tear down old combined stack that included Caddy ---
+- name: Check for old combined docker-compose.yml
+  ansible.builtin.stat:
+    path: /opt/couchdb/docker-compose.yml
+  register: _old_compose
+
+- name: Stop old combined CouchDB+Caddy stack
+  community.docker.docker_compose_v2:
+    project_src: /opt/couchdb
+    project_name: couchdb
+    state: absent
+  when: _old_compose.stat.exists
+
+- name: Remove old combined stack files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /opt/couchdb/docker-compose.yml
+    - /opt/couchdb/Caddyfile
+    - /opt/couchdb/certs
+  when: _old_compose.stat.exists
+# --- End migration ---
+
+- name: Create Caddy deployment directory
+  ansible.builtin.file:
+    path: "{{ caddy_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Create certs directory
+  ansible.builtin.file:
+    path: "{{ caddy_dir }}/certs"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Deploy origin certificate
+  ansible.builtin.copy:
+    content: "{{ origin_cert }}"
+    dest: "{{ caddy_dir }}/certs/origin-cert.pem"
+    owner: root
+    group: root
+    mode: "0640"
+  no_log: true
+  notify: Restart caddy stack
+
+- name: Deploy origin private key
+  ansible.builtin.copy:
+    content: "{{ origin_key }}"
+    dest: "{{ caddy_dir }}/certs/origin-key.pem"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart caddy stack
+
+- name: Deploy compose.yaml
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ caddy_dir }}/compose.yaml"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart caddy stack
+
+- name: Deploy Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ caddy_dir }}/Caddyfile"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart caddy stack
+
+- name: Start Caddy stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ caddy_dir }}"
+    state: present
+    pull: missing

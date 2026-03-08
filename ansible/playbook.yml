@@ -11,9 +11,27 @@
     origin_key: "{{ vault_origin_key }}"
     docker_users:
       - "{{ app_user }}"
+    headscale_domain: "{{ vault_headscale_domain }}"
+    headscale_base_domain: "{{ vault_headscale_base_domain }}"
+    headplane_cookie_secret: "{{ vault_headplane_cookie_secret }}"
+    authelia_domain: "{{ vault_authelia_domain }}"
+    authelia_session_secret: "{{ vault_authelia_session_secret }}"
+    authelia_storage_encryption_key: "{{ vault_authelia_storage_encryption_key }}"
+    authelia_oidc_hmac_secret: "{{ vault_authelia_oidc_hmac_secret }}"
+    authelia_oidc_jwks_private_key: "{{ vault_authelia_oidc_jwks_private_key }}"
+    authelia_headplane_client_secret: "{{ vault_authelia_headplane_client_secret }}"
+    authelia_headplane_client_secret_hash: "{{ vault_authelia_headplane_client_secret_hash }}"
+    authelia_user: "{{ vault_authelia_user }}"
+    authelia_user_displayname: "{{ vault_authelia_user_displayname }}"
+    authelia_user_email: "{{ vault_authelia_user_email }}"
+    authelia_user_password_hash: "{{ vault_authelia_user_password_hash }}"
+    headplane_headscale_api_key: "{{ vault_headplane_headscale_api_key }}"
 
   roles:
     - base
     - users
     - docker
+    - caddy
+    - authelia
     - couchdb
+    - headscale

@@ -1,0 +1,50 @@
+---
+- name: Create Authelia deployment directory
+  ansible.builtin.file:
+    path: "{{ authelia_dir }}/config"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Deploy Authelia configuration
+  ansible.builtin.template:
+    src: configuration.yml.j2
+    dest: "{{ authelia_dir }}/config/configuration.yml"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart authelia stack
+
+- name: Deploy users database
+  ansible.builtin.template:
+    src: users_database.yml.j2
+    dest: "{{ authelia_dir }}/config/users_database.yml"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart authelia stack
+
+- name: Deploy Authelia compose.yaml
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ authelia_dir }}/compose.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart authelia stack
+
+- name: Start Authelia stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ authelia_dir }}"
+    state: present
+    pull: missing
+
+- name: Wait for Authelia to be healthy
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9091/api/health"
+    status_code: 200
+  register: _authelia_health
+  retries: 12
+  delay: 5
+  until: _authelia_health.status == 200

@@ -17,3 +17,13 @@ output "couchdb_domain" {
   description = "FQDN for CouchDB sync endpoint"
   value       = "${var.cloudflare_subdomain}.${var.cloudflare_zone}"
 }
+
+output "headscale_domain" {
+  description = "FQDN for Headscale VPN control server"
+  value       = "vpn.${var.cloudflare_zone}"
+}
+
+output "authelia_domain" {
+  description = "FQDN for Authelia SSO portal"
+  value       = "auth.${var.cloudflare_zone}"
+}

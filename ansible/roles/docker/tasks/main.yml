@@ -54,3 +54,8 @@
     groups: docker
     append: true
   loop: "{{ docker_users }}"
+
+- name: Create shared proxy network
+  community.docker.docker_network:
+    name: proxy
+    state: present

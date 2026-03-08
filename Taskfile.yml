@@ -25,7 +25,7 @@ tasks:
         printf "  ${BOLD_CYAN}task deploy:server${NC}       Ansible playbook\n"
         printf "\n"
         printf "  ${BOLD}Status${NC}\n"
-        printf "  ${BOLD_CYAN}task status${NC}              Show CouchDB stack status\n"
+        printf "  ${BOLD_CYAN}task status${NC}              Show all services status\n"
         printf "  ${BOLD_CYAN}task ip${NC}                  Show server public IP\n"
         printf "\n"
         printf "  ${BOLD}Sub-taskfiles${NC}\n"
@@ -62,15 +62,19 @@ tasks:
       - ansible-playbook playbook.yml
 
   status:
-    desc: Show CouchDB stack status on the server
+    desc: Show all services status on the server
     silent: true
     cmds:
       - |
         source scripts/colors.sh
         SERVER_IP=$(cd infra && terraform output -raw server_ip 2>/dev/null)
         printf "\n${BOLD}Server IP:${NC} ${SERVER_IP}\n"
-        printf "\n${BOLD}CouchDB stack:${NC}\n"
-        ssh -o StrictHostKeyChecking=no root@${SERVER_IP} 'docker compose -f /opt/couchdb/docker-compose.yml ps'
+        printf "\n${BOLD}Caddy:${NC}\n"
+        ssh -o StrictHostKeyChecking=no root@${SERVER_IP} 'docker compose -f /opt/caddy/compose.yaml ps'
+        printf "\n${BOLD}CouchDB:${NC}\n"
+        ssh -o StrictHostKeyChecking=no root@${SERVER_IP} 'docker compose -f /opt/couchdb/compose.yaml ps'
+        printf "\n${BOLD}Headscale:${NC}\n"
+        ssh -o StrictHostKeyChecking=no root@${SERVER_IP} 'docker compose -f /opt/headscale/compose.yaml ps'
 
   ip:
     desc: Show server public IP

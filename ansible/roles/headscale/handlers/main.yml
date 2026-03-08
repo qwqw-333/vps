@@ -1,0 +1,5 @@
+---
+- name: Restart headscale stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ headscale_dir }}"
+    state: restarted

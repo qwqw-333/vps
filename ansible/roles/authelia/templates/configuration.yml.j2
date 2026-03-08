@@ -1,0 +1,58 @@
+---
+server:
+  address: 'tcp://0.0.0.0:9091'
+
+log:
+  level: info
+
+session:
+  secret: '{{ authelia_session_secret }}'
+  cookies:
+    - domain: 'qwqw333.work'
+      authelia_url: 'https://{{ authelia_domain }}'
+      default_redirection_url: 'https://{{ headscale_domain }}/admin'
+
+storage:
+  encryption_key: '{{ authelia_storage_encryption_key }}'
+  local:
+    path: /config/db.sqlite3
+
+authentication_backend:
+  file:
+    path: /config/users_database.yml
+    password:
+      algorithm: argon2id
+
+access_control:
+  default_policy: one_factor
+
+identity_validation:
+  reset_password:
+    jwt_secret: '{{ authelia_session_secret }}'
+
+notifier:
+  filesystem:
+    filename: /config/notification.txt
+
+identity_providers:
+  oidc:
+    hmac_secret: '{{ authelia_oidc_hmac_secret }}'
+    jwks:
+      - key: |
+          {{ authelia_oidc_jwks_private_key | indent(10) }}
+    clients:
+      - client_id: 'headplane'
+        client_name: 'Headplane'
+        client_secret: '{{ authelia_headplane_client_secret_hash }}'
+        authorization_policy: 'one_factor'
+        redirect_uris:
+          - 'https://{{ headscale_domain }}/admin/oidc/callback'
+        scopes:
+          - openid
+          - profile
+          - email
+        response_types:
+          - code
+        grant_types:
+          - authorization_code
+        token_endpoint_auth_method: 'client_secret_basic'

@@ -1,0 +1,39 @@
+services:
+  headscale:
+    image: {{ headscale_image }}
+    container_name: headscale
+    restart: unless-stopped
+    command: serve
+    labels:
+      me.tale.headplane.target: headscale
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./config/headscale.yaml:/etc/headscale/config.yaml
+      - ./config/policy.json:/etc/headscale/policy.json
+      - headscale_data:/var/lib/headscale
+      - headscale_run:/var/run/headscale
+    networks:
+      - proxy
+
+  headplane:
+    image: {{ headplane_image }}
+    container_name: headplane
+    restart: unless-stopped
+    volumes:
+      - ./config/headplane.yaml:/etc/headplane/config.yaml
+      - headplane_data:/var/lib/headplane
+      - ./config/headscale.yaml:/etc/headscale/config.yaml:ro
+      - ./config/policy.json:/etc/headscale/policy.json
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy
+
+volumes:
+  headscale_data:
+  headplane_data:
+  headscale_run:
+
+networks:
+  proxy:
+    external: true

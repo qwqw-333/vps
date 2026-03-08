@@ -1,0 +1,73 @@
+---
+# Role: headscale
+# Deploys Headscale VPN control server + Headplane web UI via Docker Compose
+
+- name: Create Headscale deployment directory
+  ansible.builtin.file:
+    path: "{{ headscale_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Create config directory
+  ansible.builtin.file:
+    path: "{{ headscale_dir }}/config"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Deploy Headscale config
+  ansible.builtin.template:
+    src: headscale-config.yaml.j2
+    dest: "{{ headscale_dir }}/config/headscale.yaml"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart headscale stack
+
+- name: Deploy ACL policy
+  ansible.builtin.copy:
+    src: policy.json
+    dest: "{{ headscale_dir }}/config/policy.json"
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+  notify: Restart headscale stack
+
+- name: Deploy Headplane config
+  ansible.builtin.template:
+    src: headplane-config.yaml.j2
+    dest: "{{ headscale_dir }}/config/headplane.yaml"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart headscale stack
+
+- name: Deploy compose.yaml
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ headscale_dir }}/compose.yaml"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart headscale stack
+
+- name: Start Headscale stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ headscale_dir }}"
+    state: present
+    pull: missing
+
+- name: Flush handlers before health check
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Headscale to be ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8080/health"
+  register: _headscale_health
+  until: _headscale_health.status == 200
+  retries: 10
+  delay: 3

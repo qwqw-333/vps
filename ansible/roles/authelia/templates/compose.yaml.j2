@@ -1,0 +1,15 @@
+services:
+  authelia:
+    image: {{ authelia_image }}
+    container_name: authelia
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9091:9091"
+    volumes:
+      - ./config:/config
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true

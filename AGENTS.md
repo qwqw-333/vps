@@ -1,41 +1,45 @@
 # AGENTS.md — AI Agent Guide
 
-Infrastructure as Code for a self-hosted Obsidian sync server on Hetzner Cloud: Terraform (Hetzner + Cloudflare), Ansible, Docker Compose, Caddy, CouchDB.
+Infrastructure as Code for a self-hosted Obsidian sync server, Headscale VPN, and Authelia SSO on Hetzner Cloud: Terraform (Hetzner + Cloudflare), Ansible, Docker Compose, Caddy, CouchDB, Headscale, Headplane, Authelia.
 
 ## Project Structure
 
 ```
 vps/
-├── infra/                          # Terraform (Hetzner Cloud + Cloudflare DNS)
-│   ├── Taskfile.yml                # task init, plan, apply, ip
-│   ├── main.tf                     # Hetzner server, firewall, Cloudflare DNS record
-│   ├── variables.tf
-│   ├── outputs.tf
-│   └── terraform.tfvars            # in .gitignore
+├── infra/ # Terraform (Hetzner Cloud + Cloudflare DNS)
+│ ├── Taskfile.yml # task init, plan, apply, ip
+│ ├── main.tf # Hetzner server, firewall, Cloudflare DNS records
+│ ├── variables.tf
+│ ├── outputs.tf
+│ └── terraform.tfvars # in .gitignore
 │
-├── ansible/                        # Server configuration (Ansible)
-│   ├── Taskfile.yml                # task generate-inventory, play, ping, status
-│   ├── ansible.cfg
-│   ├── playbook.yml
-│   ├── inventory.yml               # Generated — do not edit (in .gitignore)
-│   ├── inventory.yml.j2            # Inventory template (source of truth)
-│   ├── .vault_pass                 # Vault password (in .gitignore)
-│   ├── group_vars/
-│   │   └── all/
-│   │       └── vault.yml           # Encrypted secrets (ansible-vault)
-│   └── roles/
-│       ├── base/                   # hostname, apt, ufw, fail2ban
-│       ├── users/                  # System user, SSH key, sudo
-│       ├── docker/                 # Docker CE + Compose plugin
-│       └── couchdb/                # Caddy + CouchDB (docker-compose), cluster init
+├── ansible/ # Server configuration (Ansible)
+│ ├── Taskfile.yml # task generate-inventory, play, ping, status
+│ ├── ansible.cfg
+│ ├── playbook.yml
+│ ├── inventory.yml # Generated — do not edit (in .gitignore)
+│ ├── inventory.yml.j2 # Inventory template (source of truth)
+│ ├── .vault_pass # Vault password (in .gitignore)
+│ ├── group_vars/
+│ │ └── all/
+│ │ └── vault.yml # Encrypted secrets (ansible-vault)
+│ └── roles/
+│ ├── base/ # hostname, apt, ufw, fail2ban
+│ ├── users/ # System user, SSH key, sudo
+│ ├── docker/ # Docker CE + Compose plugin + proxy network
+│ ├── caddy/ # Shared Caddy reverse proxy (Origin CA cert)
+│ ├── authelia/ # Authelia SSO/OIDC provider
+│ ├── couchdb/ # CouchDB (compose.yaml), cluster init
+│ └── headscale/ # Headscale VPN + Headplane web UI (OIDC via Authelia)
 │
-├── scripts/                        # Helper scripts
-│   ├── colors.sh                   # Shared ANSI color definitions (bash/zsh)
-│   └── generate-inventory.py       # Renders inventory.yml from Terraform output
+├── scripts/ # Helper scripts
+│ ├── colors.sh # Shared ANSI color definitions (bash/zsh)
+│ └── generate-inventory.py # Renders inventory.yml from Terraform output
 │
-└── docs/                           # Documentation
-    ├── terraform.md                # Infra, remote state, Cloudflare DNS
-    └── ansible.md                  # Roles, vault, CouchDB deployment
+└── docs/ # Documentation
+ ├── terraform.md # Infra, remote state, Cloudflare DNS
+ ├── ansible.md # Roles, vault, CouchDB deployment
+ └── livesync.md # Obsidian LiveSync setup
 ```
 
 ## Conventions
@@ -69,9 +73,13 @@ vps/
 
 ### Docker
 
-- CouchDB and Caddy run as Docker Compose services in `/opt/couchdb/` on the server
-- Caddy terminates TLS using a **Cloudflare Origin Certificate** (traffic is proxied through Cloudflare)
-- CouchDB is not exposed externally — accessible only via Caddy reverse proxy and `127.0.0.1:5984` on the server
+- All services share a single external Docker network `proxy` (created by the `docker` role)
+- Caddy runs in `/opt/caddy/` as a shared reverse proxy for all domains
+- Authelia runs in `/opt/authelia/` — SSO/OIDC provider for Headplane and other services
+- CouchDB runs in `/opt/couchdb/` — accessible via Caddy and `127.0.0.1:5984`
+- Headscale + Headplane run in `/opt/headscale/` — accessible via Caddy and `127.0.0.1:8080`
+- Caddy terminates TLS using a **Cloudflare Origin Certificate** (wildcard `*.qwqw333.work`, traffic proxied through Cloudflare)
+- Docker Compose files are named `compose.yaml` (not `docker-compose.yml`)
 
 ### Comments
 
@@ -85,6 +93,9 @@ vps/
 - Sensitive Ansible variables live exclusively in `group_vars/all/vault.yml` (encrypted)
 - `.vault_pass` must never be committed — it is the only local secret
 - CouchDB is protected by: Cloudflare proxy + Origin Certificate + E2E encryption (LiveSync) + CouchDB auth (`require_valid_user = true`)
+- Headscale is protected by: Cloudflare proxy + Origin Certificate + Headscale auth (API keys)
+- Headplane is protected by: Authelia OIDC (SSO) + Headscale API key
+- Authelia is protected by: Cloudflare proxy + Origin Certificate + argon2id password hashing
 
 ### Ansible Vault
 

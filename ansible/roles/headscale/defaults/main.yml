@@ -1,0 +1,10 @@
+---
+headscale_dir: /opt/headscale
+headscale_image: headscale/headscale:0.28.0
+headplane_image: ghcr.io/tale/headplane:latest
+headscale_domain: ""
+headscale_base_domain: ""
+headplane_cookie_secret: ""
+authelia_domain: ""
+authelia_headplane_client_secret: ""
+headplane_headscale_api_key: ""
